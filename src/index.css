@@ -1,0 +1,362 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #000;
+  color: #fff;
+}
+
+.ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.ui-overlay > * {
+  pointer-events: auto;
+}
+
+.score {
+  font-size: 24px;
+  font-weight: bold;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.lives {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  font-size: 20px;
+}
+
+.powerup-timers {
+  position: fixed !important;
+  bottom: 200px !important;
+  left: 20px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+}
+
+.powerup-timer {
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.timer-icon {
+  font-size: 24px;
+}
+
+.timer-name {
+  min-width: 100px;
+}
+
+.timer-value {
+  margin-left: auto;
+  font-family: monospace;
+  font-size: 18px;
+}
+
+.weapon-display {
+  position: fixed !important;
+  bottom: 20px !important;
+  left: 20px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  z-index: 1000;
+}
+
+.current-weapon {
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #00ff00;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #00ff00;
+  font-weight: bold;
+}
+
+.weapon-icon {
+  font-size: 32px;
+}
+
+.weapon-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.weapon-name {
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.weapon-damage {
+  font-family: monospace;
+  font-size: 14px;
+  color: #ff6600;
+  font-weight: bold;
+}
+
+.weapon-ammo {
+  font-family: monospace;
+  font-size: 16px;
+  color: #ffffff;
+}
+
+.weapon-inventory {
+  display: flex;
+  gap: 8px;
+}
+
+.weapon-slot {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #666;
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 60px;
+  color: #999;
+}
+
+.weapon-slot.active {
+  border-color: #00ff00;
+  color: #00ff00;
+  background: rgba(0, 255, 0, 0.1);
+}
+
+.slot-icon {
+  font-size: 20px;
+}
+
+.slot-damage {
+  font-family: monospace;
+  font-size: 10px;
+  color: #ff6600;
+  font-weight: bold;
+}
+
+.slot-ammo {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.game-over, .level-complete {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 48px;
+  font-weight: bold;
+  text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+  color: #fff;
+  z-index: 1000;
+}
+
+.game-over-buttons {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin: 30px 0;
+}
+
+.game-over-button {
+  padding: 15px 30px;
+  font-size: 18px;
+  font-weight: bold;
+  border: 2px solid #ffffff;
+  background: rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  cursor: pointer;
+  border-radius: 8px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease;
+  min-width: 140px;
+}
+
+.game-over-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #00ff00;
+  color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+}
+
+.game-over-button.default-selected {
+  background: rgba(0, 255, 0, 0.3);
+  border-color: #00ff00;
+  color: #00ff00;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.7);
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 255, 0, 0.9);
+  }
+}
+
+.help-screen {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.9);
+  padding: 30px;
+  border-radius: 10px;
+  border: 2px solid #0ff;
+  max-width: 600px;
+}
+
+.help-screen h2 {
+  color: #0ff;
+  margin-top: 0;
+}
+
+.help-screen kbd {
+  background: #333;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #666;
+  font-family: monospace;
+}
+
+.ammo-counter {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 100;
+}
+
+.ammo-display {
+  margin-bottom: 10px;
+}
+
+.ammo-label {
+  margin-right: 10px;
+}
+
+.ammo-value {
+  font-size: 24px;
+}
+
+.powerup-status {
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+}
+
+.powerup-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.powerup-icon {
+  font-size: 16px;
+}
+
+.powerup-name {
+  font-size: 16px;
+}
+
+.debug-controls {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+  z-index: 100;
+}
+
+.debug-button {
+  padding: 8px 16px;
+  border: 2px solid #0ff;
+  border-radius: 5px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.debug-button:hover {
+  border-color: #fff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+.debug-info {
+  position: fixed;
+  bottom: 120px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #0ff;
+  border-radius: 5px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #0ff;
+  max-width: 450px;
+  max-height: 400px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.debug-section {
+  margin-bottom: 15px;
+  border-bottom: 1px solid #0ff;
+  padding-bottom: 8px;
+}
+
+.debug-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.debug-section h4 {
+  margin: 0 0 5px 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.debug-section div {
+  margin: 2px 0;
+  line-height: 1.3;
+}
+
+.entity-pos {
+  font-size: 11px;
+  color: #aaa;
+}
