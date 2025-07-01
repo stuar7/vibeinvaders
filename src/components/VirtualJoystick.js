@@ -58,13 +58,9 @@ function VirtualJoystick() {
   
   // Simple position calculation
   const scale = 0.1;
-  let lineEndX = 0;
-  let lineEndY = -0.5;
-  
-  if (!inDeadZone && magnitude > 0) {
-    lineEndX = (vx / magnitude) * magnitude * scale;
-    lineEndY = -(vy / magnitude) * magnitude * scale;
-  }
+  // Always show the actual mouse position, regardless of deadzone
+  let lineEndX = vx * scale;
+  let lineEndY = -vy * scale;
   
   // Pre-calculate arrays
   const circleVertices = [];

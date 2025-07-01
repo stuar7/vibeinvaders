@@ -28,6 +28,7 @@ function Player() {
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [mouseMovement, setMouseMovement] = useState({ x: 0, y: 0 });
   const [virtualJoystickLocal, setVirtualJoystickLocal] = useState({ x: 0, y: 0 }); // For local state
+  const virtualJoystickUpdateRef = useRef(null); // For deferred store updates
   
   // Roll acceleration state for Q/E keys
   const [rollAcceleration, setRollAcceleration] = useState({
@@ -37,6 +38,15 @@ function Player() {
     maxHoldTime: 2.0 // Maximum time for full acceleration (2 seconds)
   });
   
+  // Deadzone damping state for smooth rotation stopping
+  const [rotationDamping, setRotationDamping] = useState({
+    active: false,
+    startTime: 0,
+    duration: 1000, // 1 second to stop
+    startPitchRate: 0,
+    startYawRate: 0
+  });
+  
   const position = useGameStore((state) => state.playerPosition);
   const playerPowerUps = useGameStore((state) => state.playerPowerUps);
   const shieldLevel = useGameStore((state) => state.shieldLevel);
@@ -44,6 +54,9 @@ function Player() {
   const setPlayerRotationalVelocity = useGameStore((state) => state.setPlayerRotationalVelocity);
   const freeLookMode = useGameStore((state) => state.freeLookMode);
   const setVirtualJoystick = useGameStore((state) => state.setVirtualJoystick);
+  const options = useGameStore((state) => state.options);
+  const isZoomed = useGameStore((state) => state.isZoomed);
+  const zoomFOV = useGameStore((state) => state.zoomFOV);
   const keys = useKeyboard();
   const showDebugElements = useGameStore((state) => state.debug.showDebugElements);
   const showCollisionCircles = useGameStore((state) => state.debug.showCollisionCircles);
@@ -105,7 +118,14 @@ function Player() {
         // For virtual joystick display - shows desired world-space direction
         setVirtualJoystickLocal(prev => {
           const maxRadius = 100; // Max radius for virtual joystick
-          const sensitivity = 1.6; // Reduced by 20% (was 2.0)
+          let sensitivity = options.mouseSensitivity; // Get sensitivity from options
+          
+          // Compensate sensitivity when zoomed (FOV ratio compensation)
+          if (isZoomed) {
+            const baseFOV = options.fov;
+            const zoomRatio = zoomFOV / baseFOV; // e.g., 50/75 = 0.667
+            sensitivity *= zoomRatio; // Reduce sensitivity proportionally to zoom level
+          }
           
           // Add mouse movement directly (world space direction)
           let newX = prev.x + event.movementX * sensitivity;
@@ -121,8 +141,8 @@ function Player() {
           }
           
           const newPos = { x: newX, y: newY };
-          // Update game store
-          setVirtualJoystick(newPos);
+          // Use ref to prevent state update during render - will update in useFrame instead
+          virtualJoystickUpdateRef.current = newPos;
           return newPos;
         });
       }
@@ -313,6 +333,12 @@ function Player() {
   };
   
   useFrame((state, delta) => {
+    // Update virtual joystick store if there's a pending update (prevents render cycle conflicts)
+    if (virtualJoystickUpdateRef.current) {
+      setVirtualJoystick(virtualJoystickUpdateRef.current);
+      virtualJoystickUpdateRef.current = null;
+    }
+    
     if (meshRef.current) {
       meshRef.current.position.x = position.x;
       meshRef.current.position.y = position.y;
@@ -345,25 +371,87 @@ function Player() {
           if (isPointerLocked) {
             // Star Citizen style virtual joystick - continuous rotation rate based on distance from center
             const virtualJoystickInput = virtualJoystickLocal;
-            const deadZoneRadius = 18; // Same as VirtualJoystick deadzone
+            const deadZoneRadius = 4.5;
             
             // Calculate distance from center
             const inputMagnitude = Math.sqrt(virtualJoystickInput.x * virtualJoystickInput.x + virtualJoystickInput.y * virtualJoystickInput.y);
             
-            // Only apply rotation if outside deadzone
-            if (inputMagnitude > deadZoneRadius) {
-              // Calculate rotation rates based on distance from center
-              const maxRadius = 100; // Max virtual joystick radius
-              const normalizedMagnitude = Math.min(inputMagnitude / maxRadius, 1.0);
+            // Calculate target rotation rates
+            let targetPitchRate = 0;
+            let targetYawRate = 0;
+            
+            // Always allow movement, but apply different behavior based on deadzone
+            const maxRadius = 100; // Max virtual joystick radius
+            const normalizedMagnitude = Math.min(inputMagnitude / maxRadius, 1.0);
+            
+            // Convert joystick position to world-space rotation rates
+            const maxRotationRate = 2.0 * delta; // Maximum rotation speed per frame
+            let rotationRate = normalizedMagnitude * maxRotationRate;
+            
+            // Apply reduced sensitivity within deadzone for microadjustments
+            if (inputMagnitude <= deadZoneRadius) {
+              rotationRate *= 0.3; // 30% sensitivity for microadjustments within deadzone
+            }
+            
+            // Calculate rotation rates from virtual joystick input
+            if (inputMagnitude > 0.001) { // Prevent division by zero
+              targetPitchRate = -virtualJoystickInput.y / inputMagnitude * rotationRate; // Pitch (inverted Y)
+              targetYawRate = -virtualJoystickInput.x / inputMagnitude * rotationRate;    // Yaw (inverted X for correct direction)
               
-              // Convert joystick position to world-space rotation rates
-              const maxRotationRate = 2.0 * delta; // Maximum rotation speed per frame
-              const rotationRate = normalizedMagnitude * maxRotationRate;
+              // Clear damping when actively moving
+              if (rotationDamping.active) {
+                setRotationDamping({
+                  active: false,
+                  startTime: 0,
+                  duration: 1000,
+                  startPitchRate: 0,
+                  startYawRate: 0
+                });
+              }
+            } else {
+              // No input - start damping to stop rotation
+              if (!rotationDamping.active && (Math.abs(rotationDamping.startPitchRate) > 0.001 || Math.abs(rotationDamping.startYawRate) > 0.001)) {
+                // Just stopped moving - start damping
+                setRotationDamping({
+                  active: true,
+                  startTime: Date.now(),
+                  duration: 1000,
+                  startPitchRate: rotationDamping.startPitchRate || 0,
+                  startYawRate: rotationDamping.startYawRate || 0
+                });
+              }
               
-              // Calculate rotation rates from virtual joystick input
-              const pitchRate = -virtualJoystickInput.y / inputMagnitude * rotationRate; // Pitch (inverted Y)
-              const yawRate = -virtualJoystickInput.x / inputMagnitude * rotationRate;    // Yaw (inverted X for correct direction)
-              
+              if (rotationDamping.active) {
+                // Apply damping curve
+                const elapsed = Date.now() - rotationDamping.startTime;
+                const progress = Math.min(elapsed / rotationDamping.duration, 1.0);
+                const dampingFactor = 1.0 - progress; // Linear damping from 1 to 0
+                
+                targetPitchRate = rotationDamping.startPitchRate * dampingFactor;
+                targetYawRate = rotationDamping.startYawRate * dampingFactor;
+                
+                // Stop damping when complete
+                if (progress >= 1.0) {
+                  setRotationDamping({
+                    active: false,
+                    startTime: 0,
+                    duration: 1000,
+                    startPitchRate: 0,
+                    startYawRate: 0
+                  });
+                }
+              }
+            }
+            
+            // Store current rates for next frame
+            setRotationDamping(prev => ({
+              ...prev,
+              startPitchRate: targetPitchRate,
+              startYawRate: targetYawRate
+            }));
+            
+            // Apply rotation if we have any
+            if (Math.abs(targetPitchRate) > 0.0001 || Math.abs(targetYawRate) > 0.0001) {
               // Get current ship orientation
               const currentQuaternion = meshRef.current.quaternion.clone();
               
@@ -372,8 +460,8 @@ function Player() {
               const yawQuat = new THREE.Quaternion();
               
               // Apply rotations in ship's local coordinate system
-              pitchQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRate); // Local X-axis (pitch)
-              yawQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRate);     // Local Y-axis (yaw)
+              pitchQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), targetPitchRate); // Local X-axis (pitch)
+              yawQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetYawRate);     // Local Y-axis (yaw)
               
               // Apply local rotations to current orientation: current * yaw * pitch
               currentQuaternion.multiply(yawQuat);

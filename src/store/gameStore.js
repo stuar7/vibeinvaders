@@ -46,6 +46,8 @@ const initialState = {
   playerSpeed: 1.0, // Base speed multiplier
   isBraking: false, // Whether B key is held for brake
   isBoosting: false, // Whether Q key is held for boost
+  isShiftBoosting: false, // Whether Shift key is held for free flight boost
+  shiftBoostCooldown: 0, // Timestamp when shift boost was released (for shooting delay)
   weapons: {
     current: 'default',
     default: { type: 'default', ammo: Infinity, maxAmmo: Infinity, level: 1 },
@@ -84,6 +86,34 @@ const initialState = {
   freeLookMode: false,
   highlightedAlienId: null,
   virtualJoystick: { x: 0, y: 0 }, // For free flight mode mouse position display
+  
+  // Options/Settings
+  options: {
+    mouseSensitivity: 1.04, // Current sensitivity value
+    invertedMouse: false, // Y-axis inversion
+    fov: 75, // Default field of view
+  },
+  
+  // Zoom state
+  isZoomed: false, // Z key zoom toggle
+  zoomFOV: 50, // Target FOV when zoomed
+  
+  // Performance monitoring
+  performance: {
+    frameTime: 0,
+    frameRate: 0,
+    renderTime: 0,
+    componentTimes: {},
+    memoryUsage: 0,
+    triangleCount: 0,
+    lastUpdate: Date.now(),
+    frameTimeHistory: [],
+    maxFrameTime: 0,
+    avgFrameTime: 0,
+    spikes: [],
+    gcEvents: 0,
+    lastGCTime: 0,
+  }
 };
 
 export const useGameStore = create((set, get) => ({
@@ -93,7 +123,10 @@ export const useGameStore = create((set, get) => ({
   
   // Menu and game mode actions
   setShowMenu: (showMenu) => set({ showMenu }),
-  setGameMode: (gameMode) => set({ gameMode }),
+  setGameMode: (gameMode) => {
+    console.log(`[STORE] Setting game mode to: ${gameMode}`);
+    set({ gameMode });
+  },
   returnToMenu: () => set({ 
     showMenu: true, 
     gameState: 'startup',
@@ -170,9 +203,34 @@ export const useGameStore = create((set, get) => ({
   
   updateAliens: (aliens) => set({ aliens }),
   
-  addMissile: (missile) => set((state) => ({
-    missiles: [...state.missiles, missile],
-  })),
+  addMissile: (missile) => set((state) => {
+    let newMissiles = [...state.missiles, missile];
+    
+    // FIFO culling: Remove oldest missiles when exceeding 100 entities
+    if (newMissiles.length > 100) {
+      const excessCount = newMissiles.length - 100;
+      console.log(`[MISSILE CULLING] Removing ${excessCount} oldest missiles (FIFO), keeping newest 100`);
+      newMissiles = newMissiles.slice(excessCount); // Remove from beginning (oldest first)
+    }
+    
+    return { missiles: newMissiles };
+  }),
+  
+  // Optimized batch missile addition
+  addMissilesBatch: (missiles) => set((state) => {
+    let newMissiles = [...state.missiles, ...missiles];
+    
+    // FIFO culling: Remove oldest missiles when exceeding 100 entities
+    if (newMissiles.length > 100) {
+      const excessCount = newMissiles.length - 100;
+      if (excessCount > 0) {
+        console.log(`[MISSILE CULLING] Removing ${excessCount} oldest missiles (FIFO), keeping newest 100`);
+        newMissiles = newMissiles.slice(excessCount);
+      }
+    }
+    
+    return { missiles: newMissiles };
+  }),
   
   removeMissile: (id) => set((state) => ({
     missiles: state.missiles.filter((missile) => missile.id !== id),
@@ -323,6 +381,8 @@ export const useGameStore = create((set, get) => ({
 
   setBraking: (isBraking) => set({ isBraking }),
   setBoosting: (isBoosting) => set({ isBoosting }),
+  setShiftBoosting: (isShiftBoosting) => set({ isShiftBoosting }),
+  setShiftBoostCooldown: (timestamp) => set({ shiftBoostCooldown: timestamp }),
 
   setHighlightedAlien: (alienId) => set({ highlightedAlienId: alienId }),
   
@@ -365,16 +425,20 @@ export const useGameStore = create((set, get) => ({
   
   updateWingmen: (wingmen) => set({ wingmen }),
   
-  resetGame: () => set({
-    ...initialState,
-    highScore: get().highScore,
-    chargeWeapon: {
-      isCharging: false,
-      chargeLevel: 0,
-      maxCharge: 5,
-      chargeStartTime: 0,
-    },
-  }),
+  resetGame: () => {
+    const currentState = get();
+    set({
+      ...initialState,
+      gameMode: currentState.gameMode, // Preserve the selected game mode
+      highScore: currentState.highScore,
+      chargeWeapon: {
+        isCharging: false,
+        chargeLevel: 0,
+        maxCharge: 5,
+        chargeStartTime: 0,
+      },
+    });
+  },
   
   // Weapon management
   switchWeapon: (weaponType) => set((state) => {
@@ -461,12 +525,15 @@ export const useGameStore = create((set, get) => ({
   })),
 
   startGame: (difficulty = 'normal') => {
+    const currentState = get();
+    console.log(`[STORE] Starting game with mode: ${currentState.gameMode}`);
     set({
       ...initialState,
       showMenu: false,
       gameState: 'playing',
       difficulty,
-      highScore: get().highScore,
+      gameMode: currentState.gameMode, // Preserve the selected game mode
+      highScore: currentState.highScore,
       lives: 3,
       aliens: [],
       missiles: [],
@@ -497,6 +564,38 @@ export const useGameStore = create((set, get) => ({
         ...state.defensiveSystems.battery,
         charge: Math.min(state.defensiveSystems.battery.maxCharge, state.defensiveSystems.battery.charge + amount),
         status: (state.defensiveSystems.battery.charge + amount) >= 80 ? 'charged' : 'charging'
+      }
+    }
+  })),
+
+  // Options setters
+  setMouseSensitivity: (sensitivity) => set((state) => ({
+    options: { ...state.options, mouseSensitivity: sensitivity }
+  })),
+  
+  setInvertedMouse: (inverted) => set((state) => ({
+    options: { ...state.options, invertedMouse: inverted }
+  })),
+  
+  setFOV: (fov) => set((state) => ({
+    options: { ...state.options, fov: fov }
+  })),
+  
+  // Zoom controls
+  setZoomed: (isZoomed) => set({ isZoomed }),
+  toggleZoom: () => set((state) => ({ isZoomed: !state.isZoomed })),
+  
+  // Performance monitoring
+  updatePerformance: (perfData) => set((state) => ({
+    performance: { ...state.performance, ...perfData }
+  })),
+  
+  updateComponentTime: (componentName, time) => set((state) => ({
+    performance: {
+      ...state.performance,
+      componentTimes: {
+        ...state.performance.componentTimes,
+        [componentName]: time
       }
     }
   })),

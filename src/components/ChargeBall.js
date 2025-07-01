@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { useGameStore } from '../store/gameStore';
 
 function ChargeBall() {
   const meshRef = useRef();
   const playerPosition = useGameStore((state) => state.playerPosition);
+  const playerRotation = useGameStore((state) => state.playerRotation);
   const chargeWeapon = useGameStore((state) => state.chargeWeapon);
   const weapons = useGameStore((state) => state.weapons);
   
@@ -12,11 +14,20 @@ function ChargeBall() {
   const isVisible = weapons.current === 'charge' && chargeWeapon.isCharging && chargeWeapon.chargeLevel > 0;
   
   useFrame((state) => {
-    if (meshRef.current && isVisible) {
-      // Position the ball further in front of the ship
-      meshRef.current.position.x = playerPosition.x;
-      meshRef.current.position.y = playerPosition.y;
-      meshRef.current.position.z = playerPosition.z - 6; // 6 units in front of ship (was 2)
+    if (meshRef.current && isVisible && playerPosition && playerRotation) {
+      // Calculate position in front of ship based on ship's rotation
+      const forwardOffset = new THREE.Vector3(0, 0, -6); // 6 units forward in ship's local space
+      const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler(playerRotation.x, playerRotation.y, playerRotation.z)
+      );
+      forwardOffset.applyMatrix4(rotationMatrix); // Transform to world space
+      
+      // Position the ball in front of the ship
+      meshRef.current.position.set(
+        playerPosition.x + forwardOffset.x,
+        playerPosition.y + forwardOffset.y,
+        playerPosition.z + forwardOffset.z
+      );
       
       // Pulsing effect based on charge level
       const pulseSpeed = 3 + chargeWeapon.chargeLevel; // Faster pulse with more charge

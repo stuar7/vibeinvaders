@@ -1,367 +1,686 @@
-import React, { useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useRef, useMemo, useEffect, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useGameStore } from '../store/gameStore';
 import * as THREE from 'three';
 
-function Ground({ mode = 'planet' }) {
-  const meshRef = useRef();
-  const meshRef2 = useRef();
-  const backgroundMeshRef = useRef();
-  const backgroundMeshRef2 = useRef();
-  const scrollRef = useRef(0);
-  const backgroundScrollRef = useRef(0);
-  const colorCycleRef = useRef(0);
+// Import BVH for optimization
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+
+// Extend Three.js prototypes for BVH
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+function Ground({ 
+  mode = 'asteroid-tunnel',
+  showNebula = true,          // Toggle nebula particles
+  fogEnabled = false,          // Toggle fog
+  fogColor = 0xf0f0f0,        // Gray fog color
+  fogNear = 1200,              // Fog start distance
+  fogFar = 4000               // Fog end distance
+}) {
+  const groupRef = useRef();
+  const asteroidFieldRef = useRef();
+  const nebulaRef = useRef();
+  const glowingAsteroidsRef = useRef([]);
+  const backgroundBloomRef = useRef();
+  const { camera, scene } = useThree();
+  
   const playerSpeed = useGameStore((state) => state.playerSpeed);
   const playerPowerUps = useGameStore((state) => state.playerPowerUps);
   const isBraking = useGameStore((state) => state.isBraking);
   const isBoosting = useGameStore((state) => state.isBoosting);
   
-  const terrainData = useMemo(() => {
-    const width = 1200; // Expanded by 50% from 800 to hide edges
-    const height = 500;
-    const widthSegments = 100;
-    const heightSegments = 250;
-    
-    const geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
-    const positions = geometry.attributes.position.array;
-    
-    if (mode === 'planet') {
-      // Add color attribute for vertex colors
-      const colors = new Float32Array(positions.length);
-      
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i];
-        const y = positions[i + 1];
-        
-        // Normalize Y to create seamless tiling (0 to 2π for the height)
-        const normalizedY = (y + height/2) / height * Math.PI * 2;
-        
-        // Create seamless terrain using periodic functions
-        let elevation = 0;
-        
-        // Single ultra-massive wave pattern across the entire terrain
-        elevation += Math.sin(normalizedY * 0.1) * 8; // Ultra-massive primary wave
-        
-        positions[i + 2] = elevation;
-        
-        // Calculate vertex colors based on elevation and position
-        const heightFactor = (elevation + 8) / 16; // Normalize elevation
-        const ridgeFactor = Math.abs(Math.sin(x * 0.02));
-        
-        // Create alien terrain colors  
-        colors[i] = 0.3 + heightFactor * 0.3 + ridgeFactor * 0.1;     // R: darker reds
-        colors[i + 1] = 0.1 + heightFactor * 0.2;                     // G: minimal green
-        colors[i + 2] = 0.4 + heightFactor * 0.4 + Math.sin(x * 0.1) * 0.2; // B: alien blue-purple
-      }
-      
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    } else {
-      // Space mode - subtle grid pattern
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i];
-        const y = positions[i + 1];
-        const gridPattern = (Math.sin(x * 0.1) * Math.sin(y * 0.1)) * 0.5;
-        positions[i + 2] = gridPattern;
-      }
-    }
-    
-    geometry.computeVertexNormals();
-    return geometry;
-  }, [mode]);
+  const [visibleIndices, setVisibleIndices] = useState([]);
   
-  // Background terrain data - wider and further back
-  const backgroundTerrainData = useMemo(() => {
-    const width = 2400; // Double the width for wider coverage
-    const height = 800; // Taller for more coverage
-    const widthSegments = 120;
-    const heightSegments = 200;
+  // Generate a naturally curving path through space
+  const asteroidPath = useMemo(() => {
+    const controlPoints = [];
+    const segments = 30;
+    const length = 8000;
     
-    const geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
-    const positions = geometry.attributes.position.array;
-    
-    if (mode === 'planet') {
-      // Add color attribute for vertex colors
-      const colors = new Float32Array(positions.length);
+    for (let i = 0; i < segments; i++) {
+      const t = i / segments;
       
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i];
-        const y = positions[i + 1];
-        
-        // Normalize Y to create seamless tiling
-        const normalizedY = (y + height/2) / height * Math.PI * 2;
-        
-        // Create gentler, more distant terrain
-        let elevation = 0;
-        
-        // Single ultra-massive wave for background terrain (even larger)
-        elevation += Math.sin(normalizedY * 0.08) * 6; // Ultra-massive background wave
-        
-        positions[i + 2] = elevation;
-        
-        // Background terrain colors - darker and more muted
-        const heightFactor = (elevation + 6) / 12;
-        const ridgeFactor = Math.abs(Math.sin(x * 0.015));
-        
-        // Darker, more distant colors
-        colors[i] = 0.2 + heightFactor * 0.2 + ridgeFactor * 0.05;     // R: darker reds
-        colors[i + 1] = 0.05 + heightFactor * 0.1;                     // G: minimal green
-        colors[i + 2] = 0.25 + heightFactor * 0.25 + Math.sin(x * 0.05) * 0.1; // B: muted blue-purple
+      // Create organic curve variations
+      const xOffset = Math.sin(t * Math.PI * 4) * 300 + 
+                     Math.sin(t * Math.PI * 7) * 150;
+      const yOffset = Math.cos(t * Math.PI * 3) * 200 + 
+                     Math.cos(t * Math.PI * 8) * 100;
+      
+      controlPoints.push(new THREE.Vector3(
+        xOffset,
+        yOffset,
+        -i * (length / segments) - 500 // Start behind player
+      ));
+    }
+    
+    return new THREE.CatmullRomCurve3(controlPoints, false);
+  }, []);
+  
+  // Create asteroid geometry variations with BVH
+  const asteroidGeometries = useMemo(() => {
+    const geometries = {
+      high: new THREE.IcosahedronGeometry(1, 2), // High detail
+      medium: new THREE.IcosahedronGeometry(1, 1), // Medium detail
+      low: new THREE.SphereGeometry(1, 6, 4), // Low detail for distance
+    };
+    
+    // Compute BVH for each geometry for efficient collision detection
+    Object.values(geometries).forEach(geometry => {
+      geometry.computeBoundsTree({
+        strategy: 'SAH', // Surface Area Heuristic - best quality
+        maxLeafTris: 8
+      });
+    });
+    
+    return geometries;
+  }, []);
+  
+  // Create asteroid materials with variations
+  const asteroidMaterials = useMemo(() => {
+    return [
+      new THREE.MeshStandardMaterial({ 
+        color: 0x888888, 
+        roughness: 0.8,
+        metalness: 0.2
+      }),
+      new THREE.MeshStandardMaterial({ 
+        color: 0x666666, 
+        roughness: 0.9,
+        metalness: 0.1
+      }),
+      new THREE.MeshStandardMaterial({ 
+        color: 0x999999, 
+        roughness: 0.7,
+        metalness: 0.3
+      }),
+    ];
+  }, []);
+  
+  // Create instanced asteroid field along the curved path
+  const asteroidField = useMemo(() => {
+    const asteroidCount = 2000;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    
+    // Create instanced mesh
+    const instancedMesh = new THREE.InstancedMesh(
+      asteroidGeometries.medium,
+      asteroidMaterials[0],
+      asteroidCount
+    );
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    
+    // Distribute asteroids along the curved path
+    const points = asteroidPath.getSpacedPoints(asteroidCount);
+    const asteroids = [];
+    
+    points.forEach((point, index) => {
+      // Create tunnel distribution
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 50 + Math.random() * 150; // Tunnel radius variation
+      
+      position.set(
+        point.x + Math.cos(angle) * radius,
+        point.y + Math.sin(angle) * radius,
+        point.z + (Math.random() - 0.5) * 30
+      );
+      
+      // Random rotation
+      rotation.setFromEuler(new THREE.Euler(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      ));
+      
+      // Size variation
+      const scaleValue = 0.5 + Math.random() * 3;
+      scale.setScalar(scaleValue);
+      
+      matrix.compose(position, rotation, scale);
+      instancedMesh.setMatrixAt(index, matrix);
+      
+      // Store asteroid data for spatial queries
+      asteroids.push({
+        position: position.clone(),
+        scale: scaleValue,
+        index: index
+      });
+    });
+    
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    instancedMesh.castShadow = true;
+    instancedMesh.receiveShadow = true;
+    
+    return { mesh: instancedMesh, asteroids };
+  }, [asteroidPath, asteroidGeometries, asteroidMaterials]);
+  
+  // Create glowing asteroids for bloom effect
+  const glowingAsteroids = useMemo(() => {
+    const glowingCount = 50;
+    const glowPositions = asteroidPath.getSpacedPoints(glowingCount);
+    const glowingMeshes = [];
+    
+    glowPositions.forEach((position, i) => {
+      const geometry = new THREE.IcosahedronGeometry(3 + Math.random() * 2, 2);
+      // Add BVH to glowing asteroid geometries too
+      geometry.computeBoundsTree();
+      
+      const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(10, 8, 15), // HDR colors for bloom
+        emissive: new THREE.Color(5, 4, 8),
+        emissiveIntensity: 2,
+      });
+      
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.position.add(new THREE.Vector3(
+        (Math.random() - 0.5) * 100,
+        (Math.random() - 0.5) * 100,
+        (Math.random() - 0.5) * 50
+      ));
+      
+      // Enable bloom layer (layer 1 for selective bloom)
+      mesh.layers.enable(1);
+      
+      glowingMeshes.push(mesh);
+    });
+    
+    return glowingMeshes;
+  }, [asteroidPath]);
+  
+  // Create distant background bloom particles (skybox-like)
+  const backgroundBloomParticles = useMemo(() => {
+    const particleCount = 2000; // Many distant stars/galaxies
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    
+    for (let i = 0; i < particleCount; i++) {
+      // Position far away in a sphere around the scene
+      const distance = 4000 + Math.random() * 5000;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      
+      positions[i * 3] = distance * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = distance * Math.cos(phi);
+      positions[i * 3 + 2] = distance * Math.sin(phi) * Math.sin(theta) - 2000;
+      
+      // Color variation - blue to purple to pink range for cosmic feel
+      const colorType = Math.random();
+      if (colorType < 0.3) {
+        // Blue stars
+        colors[i * 3] = 0.6 + Math.random() * 0.4;
+        colors[i * 3 + 1] = 0.8 + Math.random() * 0.2;
+        colors[i * 3 + 2] = 1.0;
+      } else if (colorType < 0.6) {
+        // Purple galaxies
+        colors[i * 3] = 0.8 + Math.random() * 0.2;
+        colors[i * 3 + 1] = 0.5 + Math.random() * 0.3;
+        colors[i * 3 + 2] = 0.9 + Math.random() * 0.1;
+      } else {
+        // Pink/orange nebulae
+        colors[i * 3] = 1.0;
+        colors[i * 3 + 1] = 0.6 + Math.random() * 0.2;
+        colors[i * 3 + 2] = 0.4 + Math.random() * 0.3;
       }
       
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    } else {
-      // Space mode - subtle grid pattern
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i];
-        const y = positions[i + 1];
-        const gridPattern = (Math.sin(x * 0.05) * Math.sin(y * 0.05)) * 0.3;
-        positions[i + 2] = gridPattern;
+      // Varied sizes for distant objects - smaller stars, larger galaxies
+      if (colorType < 0.7) {
+        // Smaller stars
+        sizes[i] = Math.random() * 40 + 20;
+      } else {
+        // Larger galaxies/nebulae
+        sizes[i] = Math.random() * 100 + 80;
       }
     }
     
-    geometry.computeVertexNormals();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    
     return geometry;
-  }, [mode]);
+  }, []);
+  
+  // Create nebula particle system
+  const nebulaParticles = useMemo(() => {
+    const particleCount = 4000;
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    
+    const curvePoints = asteroidPath.getSpacedPoints(100);
+    
+    for (let i = 0; i < particleCount; i++) {
+      // Distribute particles around curve
+      const t = Math.random();
+      const point = asteroidPath.getPointAt(t);
+      
+      const radius = 450 + Math.random() * 500;
+      const angle = Math.random() * Math.PI * 2;
+      const angleY = (Math.random() - 0.5) * Math.PI;
+      
+      positions[i * 3] = point.x + Math.cos(angle) * Math.cos(angleY) * radius;
+      positions[i * 3 + 1] = point.y + Math.sin(angleY) * radius;
+      positions[i * 3 + 2] = point.z + Math.sin(angle) * Math.cos(angleY) * radius;
+      
+      // Color gradient - purple to pink nebula
+      const intensity = 0.1 + (radius / 550 > 1 ? 0.1 : 0);
+      colors[i * 3] = intensity * 0.8 + (Math.random() > 0.95 ? 0.05 : 0);
+      colors[i * 3 + 1] = intensity * 0.4 + (Math.random() > 0.95 ? 0.02 : 0);
+      colors[i * 3 + 2] = intensity * 0.9 + (Math.random() > 0.95 ? 0.05 : 0);
+
+      sizes[i] = Math.random() * 30 + 120;
+    }
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    
+    return geometry;
+  }, [asteroidPath]);
+  
+  // Create cloud texture for nebula
+  const cloudTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    const gradient = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+    gradient.addColorStop(0.4, 'rgba(255,255,255,0.3)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 512, 512);
+    
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+  
+  // Create star texture for background blooms
+  const starTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    
+    // Clear canvas
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.fillRect(0, 0, 256, 256);
+    
+    // Draw star with bright center and rays
+    const centerX = 128;
+    const centerY = 128;
+    
+    // Bright core
+    const coreGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 20);
+    coreGradient.addColorStop(0, 'rgba(255,255,255,1)');
+    coreGradient.addColorStop(0.2, 'rgba(255,255,255,0.9)');
+    coreGradient.addColorStop(1, 'rgba(255,255,255,0)');
+    
+    ctx.fillStyle = coreGradient;
+    ctx.fillRect(0, 0, 256, 256);
+    
+    // Add star rays
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    
+    // Horizontal ray
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(256, centerY);
+    ctx.stroke();
+    
+    // Vertical ray
+    ctx.beginPath();
+    ctx.moveTo(centerX, 0);
+    ctx.lineTo(centerX, 256);
+    ctx.stroke();
+    
+    // Diagonal rays
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(256, 256);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(256, 0);
+    ctx.lineTo(0, 256);
+    ctx.stroke();
+    
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+  
+  // Nebula shader material
+  const nebulaMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        pointTexture: { value: cloudTexture },
+        fogNear: { value: 500 },
+        fogFar: { value: 2000 }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vFogDepth;
+        
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          vFogDepth = -mvPosition.z;
+          gl_PointSize = size * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        uniform float fogNear;
+        uniform float fogFar;
+        varying vec3 vColor;
+        varying float vFogDepth;
+        
+        void main() {
+          vec4 color = vec4(vColor, 1.0);
+          vec4 tex = texture2D(pointTexture, gl_PointCoord);
+          
+          float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+          
+          gl_FragColor = vec4(color.rgb * tex.rgb, tex.a * (1.0 - fogFactor) * 0.5);
+          
+          if (gl_FragColor.a < 0.01) discard;
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      depthTest: true,
+      depthWrite: false,
+      transparent: true
+    });
+  }, [cloudTexture]);
+  
+  // Background bloom shader material (no fog for distant objects)
+  const backgroundBloomMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        pointTexture: { value: starTexture },
+        time: { value: 0 }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * (500.0 / -mvPosition.z); // Larger scale factor for distant objects
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        uniform float time;
+        varying vec3 vColor;
+        
+        void main() {
+          vec4 tex = texture2D(pointTexture, gl_PointCoord);
+          
+          // Add subtle twinkling effect
+          float twinkle = sin(time * 2.0 + gl_FragCoord.x * 0.01 + gl_FragCoord.y * 0.01) * 0.1 + 0.9;
+          
+          // HDR colors for bloom with star brightness variation
+          float brightness = 1.0 + sin(time * 3.0 + gl_FragCoord.x * 0.1) * 0.5;
+          vec3 color = vColor * brightness * 2.5; // Multiply for HDR effect
+          
+          gl_FragColor = vec4(color * tex.rgb * twinkle, tex.a);
+          
+          if (gl_FragColor.a < 0.01) discard;
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      depthTest: true,
+      depthWrite: false,
+      transparent: true,
+      fog: false // No fog for background objects
+    });
+  }, [starTexture]);
+  
+  // Update LOD and visibility
+  const updateLOD = (cameraPosition) => {
+    const frustum = new THREE.Frustum();
+    const cameraMatrix = new THREE.Matrix4().multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse
+    );
+    frustum.setFromProjectionMatrix(cameraMatrix);
+    
+    const visible = [];
+    const matrix = new THREE.Matrix4();
+    
+    asteroidField.asteroids.forEach((asteroid, index) => {
+      // Bounds check to prevent WebGL warning
+      if (index >= asteroidFieldRef.current.count) {
+        console.warn(`Asteroid index ${index} exceeds instanced mesh count ${asteroidFieldRef.current.count}`);
+        return;
+      }
+      
+      const distance = asteroid.position.distanceTo(cameraPosition);
+      
+      // Simple frustum culling
+      if (frustum.containsPoint(asteroid.position) && distance < 2000) {
+        visible.push(index);
+        
+        // Update asteroid visibility/LOD
+        if (distance < 200) {
+          // High detail - full visibility
+          asteroidFieldRef.current.getMatrixAt(index, matrix);
+          matrix.elements[0] = matrix.elements[5] = matrix.elements[10] = asteroid.scale;
+        } else if (distance < 500) {
+          // Medium detail
+          asteroidFieldRef.current.getMatrixAt(index, matrix);
+          matrix.elements[0] = matrix.elements[5] = matrix.elements[10] = asteroid.scale * 0.8;
+        } else {
+          // Low detail
+          asteroidFieldRef.current.getMatrixAt(index, matrix);
+          matrix.elements[0] = matrix.elements[5] = matrix.elements[10] = asteroid.scale * 0.5;
+        }
+        asteroidFieldRef.current.setMatrixAt(index, matrix);
+      }
+    });
+    
+    asteroidFieldRef.current.instanceMatrix.needsUpdate = true;
+    setVisibleIndices(visible);
+  };
+  
+  // Enhanced collision detection with BVH
+  const checkCollisions = (playerPosition, playerRadius = 5) => {
+    const collisions = [];
+    const playerSphere = new THREE.Sphere(playerPosition, playerRadius);
+    
+    visibleIndices.forEach(index => {
+      const asteroid = asteroidField.asteroids[index];
+      const distance = asteroid.position.distanceTo(playerPosition);
+      
+      // Quick distance check first
+      if (distance < playerRadius + asteroid.scale * 2) {
+        // Get instance transform
+        const matrix = new THREE.Matrix4();
+        asteroidFieldRef.current.getMatrixAt(index, matrix);
+        
+        // Transform sphere to asteroid's local space for precise collision
+        const localSphere = playerSphere.clone();
+        const inverseMatrix = matrix.clone().invert();
+        localSphere.applyMatrix4(inverseMatrix);
+        
+        // Check against geometry BVH for precise collision
+        const geometryBVH = asteroidFieldRef.current.geometry.boundsTree;
+        if (geometryBVH && geometryBVH.intersectsSphere(localSphere)) {
+          collisions.push({
+            asteroid: asteroid,
+            index: index,
+            distance: distance
+          });
+        }
+      }
+    });
+    
+    return collisions;
+  };
+  
+  // Setup fog and cleanup on unmount
+  useEffect(() => {
+    // Setup gray fog
+    if (fogEnabled) {
+      scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+    }
+    
+    // Add glowing asteroids to scene
+    glowingAsteroids.forEach(mesh => {
+      scene.add(mesh);
+    });
+    glowingAsteroidsRef.current = glowingAsteroids;
+    
+    // Background bloom particles are added in the render group
+    
+    return () => {
+      // Remove fog on cleanup
+      if (scene.fog) {
+        scene.fog = null;
+      }
+      // Cleanup BVH
+      Object.values(asteroidGeometries).forEach(geometry => {
+        if (geometry.boundsTree) {
+          geometry.disposeBoundsTree();
+        }
+      });
+      
+      // Cleanup glowing asteroids
+      glowingAsteroids.forEach(mesh => {
+        scene.remove(mesh);
+        if (mesh.geometry.boundsTree) {
+          mesh.geometry.disposeBoundsTree();
+        }
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      });
+      
+      // Cleanup is handled by React
+    };
+  }, [glowingAsteroids, scene, asteroidGeometries, fogEnabled, fogColor, fogNear, fogFar]);
   
   useFrame((state, delta) => {
-    // Calculate effective speed (base speed + powerups + brake/boost)
+    // Calculate effective speed
     let baseSpeedMultiplier = playerSpeed * (playerPowerUps.speedBoost ? 2.0 : 1.0) * (playerPowerUps.slowTime ? 0.5 : 1.0);
     
-    // Apply brake/boost effects
     if (isBraking) {
-      baseSpeedMultiplier *= 0.1; // 90% reduction when braking
+      baseSpeedMultiplier *= 0.1;
     } else if (isBoosting) {
-      baseSpeedMultiplier *= 2.0; // 100% increase when boosting
+      baseSpeedMultiplier *= 2.0;
     }
     
-    const scrollSpeed = 20 * baseSpeedMultiplier;
-    const backgroundScrollSpeed = 8 * baseSpeedMultiplier; // Slower for parallax effect
-    
-    scrollRef.current += delta * scrollSpeed;
-    backgroundScrollRef.current += delta * backgroundScrollSpeed;
-    
-    // Color cycling - large cycle every 30 seconds
-    colorCycleRef.current += delta * 0.2; // Slow cycle speed
-    
-    // Update ground material emissive color based on cycle
-    if (meshRef.current && meshRef2.current && mode === 'planet') {
-      const cycle = colorCycleRef.current;
+    // Move along the path
+    if (groupRef.current) {
+      groupRef.current.position.z += delta * 50 * baseSpeedMultiplier;
       
-      // Create dramatic color cycling through different alien terrain themes
-      const cyclePhase = cycle % (Math.PI * 6); // 6 distinct color phases
-      
-      let red, green, blue;
-      
-      if (cyclePhase < Math.PI) {
-        // Phase 1: Deep red/orange alien desert
-        red = 0.4 + Math.sin(cycle) * 0.2;
-        green = 0.15 + Math.sin(cycle * 2) * 0.1;
-        blue = 0.05;
-      } else if (cyclePhase < Math.PI * 2) {
-        // Phase 2: Purple/magenta crystalline
-        red = 0.3 + Math.sin(cycle * 1.5) * 0.15;
-        green = 0.08;
-        blue = 0.4 + Math.sin(cycle * 0.8) * 0.2;
-      } else if (cyclePhase < Math.PI * 3) {
-        // Phase 3: Toxic green swamp
-        red = 0.1;
-        green = 0.35 + Math.sin(cycle * 1.2) * 0.2;
-        blue = 0.15 + Math.sin(cycle * 2.5) * 0.1;
-      } else if (cyclePhase < Math.PI * 4) {
-        // Phase 4: Icy blue/cyan
-        red = 0.05;
-        green = 0.2 + Math.sin(cycle * 1.8) * 0.15;
-        blue = 0.45 + Math.sin(cycle * 0.9) * 0.25;
-      } else if (cyclePhase < Math.PI * 5) {
-        // Phase 5: Golden/yellow volcanic
-        red = 0.45 + Math.sin(cycle * 1.3) * 0.2;
-        green = 0.35 + Math.sin(cycle * 1.7) * 0.15;
-        blue = 0.08;
-      } else {
-        // Phase 6: Deep space purple/void
-        red = 0.15 + Math.sin(cycle * 2.2) * 0.1;
-        green = 0.05;
-        blue = 0.25 + Math.sin(cycle * 1.1) * 0.2;
-      }
-      
-      const emissiveColor = new THREE.Color(red, green, blue);
-      
-      // Apply to foreground meshes
-      if (meshRef.current.material) {
-        meshRef.current.material.emissive = emissiveColor;
-        meshRef.current.material.emissiveIntensity = 0.15 + Math.sin(cycle * 2) * 0.1;
-      }
-      if (meshRef2.current.material) {
-        meshRef2.current.material.emissive = emissiveColor;
-        meshRef2.current.material.emissiveIntensity = 0.15 + Math.sin(cycle * 2) * 0.1;
-      }
-      
-      // Apply to background meshes with reduced intensity
-      const backgroundEmissiveColor = new THREE.Color(red * 0.6, green * 0.6, blue * 0.6);
-      if (backgroundMeshRef.current.material) {
-        backgroundMeshRef.current.material.emissive = backgroundEmissiveColor;
-        backgroundMeshRef.current.material.emissiveIntensity = 0.08 + Math.sin(cycle * 2) * 0.05;
-      }
-      if (backgroundMeshRef2.current.material) {
-        backgroundMeshRef2.current.material.emissive = backgroundEmissiveColor;
-        backgroundMeshRef2.current.material.emissiveIntensity = 0.08 + Math.sin(cycle * 2) * 0.05;
+      // Reset position when reaching end of path
+      if (groupRef.current.position.z > 8000) {
+        groupRef.current.position.z = 0;
       }
     }
     
-    // Position foreground meshes for seamless scrolling
-    if (meshRef.current && meshRef2.current) {
-      const planeLength = 500;
-      const offset = scrollRef.current % planeLength;
-      
-      meshRef.current.position.z = offset;
-      meshRef2.current.position.z = offset - planeLength;
-      
-      // Swap planes when needed
-      if (meshRef.current.position.z > planeLength / 2) {
-        meshRef.current.position.z -= planeLength * 2;
-      }
-      if (meshRef2.current.position.z > planeLength / 2) {
-        meshRef2.current.position.z -= planeLength * 2;
-      }
+    // Update LOD based on camera position
+    updateLOD(camera.position);
+    
+    // Rotate asteroids slowly
+    if (asteroidFieldRef.current) {
+      const time = state.clock.elapsedTime;
+      asteroidFieldRef.current.rotation.y = time * 0.05;
     }
     
-    // Position background meshes for slower parallax scrolling
-    if (backgroundMeshRef.current && backgroundMeshRef2.current) {
-      const backgroundPlaneLength = 800; // Longer length for background
-      const backgroundOffset = backgroundScrollRef.current % backgroundPlaneLength;
-      
-      backgroundMeshRef.current.position.z = backgroundOffset - 200; // Further back
-      backgroundMeshRef2.current.position.z = backgroundOffset - backgroundPlaneLength - 200;
-      
-      // Swap background planes when needed
-      if (backgroundMeshRef.current.position.z > backgroundPlaneLength / 2) {
-        backgroundMeshRef.current.position.z -= backgroundPlaneLength * 2;
-      }
-      if (backgroundMeshRef2.current.position.z > backgroundPlaneLength / 2) {
-        backgroundMeshRef2.current.position.z -= backgroundPlaneLength * 2;
-      }
+    // Animate glowing asteroids
+    glowingAsteroidsRef.current.forEach((mesh, i) => {
+      mesh.rotation.x += delta * 0.5;
+      mesh.rotation.y += delta * 0.3;
+      mesh.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 2 + i) * 0.2);
+    });
+    
+    // Update time uniform for background bloom twinkling
+    if (backgroundBloomRef.current) {
+      backgroundBloomRef.current.material.uniforms.time.value = state.clock.elapsedTime;
+    }
+    
+    // Check collisions (example - integrate with your game logic)
+    const collisions = checkCollisions(camera.position);
+    if (collisions.length > 0) {
+      // Handle collisions
+      console.log('Asteroid collision detected:', collisions);
     }
   });
   
-  const groundMaterial = useMemo(() => {
-    if (mode === 'planet') {
-      return (
-        <meshStandardMaterial
-          vertexColors
-          emissive="#1a1a0a"
-          emissiveIntensity={0.1}
-          roughness={0.9}
-          metalness={0.1}
-          wireframe={false}
-        />
-      );
-    } else {
-      return (
-        <meshStandardMaterial
-          color="#1a1a2e"
-          roughness={1}
-          metalness={0}
-          opacity={0.8}
-          transparent
-          wireframe={false}
-        />
-      );
-    }
-  }, [mode]);
-  
-  const backgroundGroundMaterial = useMemo(() => {
-    if (mode === 'planet') {
-      return (
-        <meshStandardMaterial
-          vertexColors
-          emissive="#0a0a0a"
-          emissiveIntensity={0.08}
-          roughness={0.95}
-          metalness={0.05}
-          wireframe={false}
-          transparent
-          opacity={0.7}
-        />
-      );
-    } else {
-      return (
-        <meshStandardMaterial
-          color="#0f0f1a"
-          roughness={1}
-          metalness={0}
-          opacity={0.5}
-          transparent
-          wireframe={false}
-        />
-      );
-    }
-  }, [mode]);
-  
   return (
-    <group>
-      <mesh
-        ref={meshRef}
-        geometry={terrainData}
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -25, 0]}
-      >
-        {groundMaterial}
-      </mesh>
+    <group ref={groupRef} position={[0, 0, 0]}>
+      {/* Asteroid field */}
+      <instancedMesh 
+        ref={asteroidFieldRef}
+        args={[asteroidField.mesh.geometry, asteroidField.mesh.material, asteroidField.asteroids.length]}
+        instanceMatrix={asteroidField.mesh.instanceMatrix}
+      />
       
-      <mesh
-        ref={meshRef2}
-        geometry={terrainData}
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -25, -1000]}
-      >
-        {groundMaterial}
-      </mesh>
-      
-      {/* Background terrain layer - wider and further back */}
-      <mesh
-        ref={backgroundMeshRef}
-        geometry={backgroundTerrainData}
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -35, -200]}
-      >
-        {backgroundGroundMaterial}
-      </mesh>
-      
-      <mesh
-        ref={backgroundMeshRef2}
-        geometry={backgroundTerrainData}
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -35, -1200]}
-      >
-        {backgroundGroundMaterial}
-      </mesh>
-      
-      {/* Static horizon plane - very large, light gray, beyond all terrain */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -45, -2000]}
-      >
-        <planeGeometry args={[5000, 3000]} />
-        <meshStandardMaterial 
-          color="#404040"
-          roughness={1}
-          metalness={0}
-          transparent
-          opacity={0.6}
-        />
-      </mesh>
-      
-      {mode === 'planet' && (
-        <>
-          <directionalLight
-            position={[0, 50, 20]}
-            intensity={1.5}
-            color="#ffeecc"
-            castShadow
-          />
-          <ambientLight intensity={0.5} color="#ccccff" />
-        </>
+      {/* Nebula particles - purple/pink dots */}
+      {showNebula && (
+        <points ref={nebulaRef} geometry={nebulaParticles} material={nebulaMaterial} />
       )}
+      
+      {/* Background bloom particles - distant stars/galaxies */}
+      <points 
+        ref={backgroundBloomRef} 
+        geometry={backgroundBloomParticles} 
+        material={backgroundBloomMaterial}
+        layers-mask={3} // Enable both layer 0 and 1 for bloom
+      />
+      
+      {/* Lighting setup */}
+      <group>
+        {/* Main directional light */}
+        <directionalLight
+          position={[500, 300, -200]}
+          intensity={1.5}
+          color="#fff8e0"
+          castShadow
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+        />
+        
+        {/* Nebula ambient lighting */}
+        <pointLight
+          position={[-300, 200, -500]}
+          intensity={0.8}
+          color="#ff88aa"
+          distance={1200}
+          decay={2}
+        />
+        
+        <pointLight
+          position={[300, 150, -300]}
+          intensity={0.6}
+          color="#8888ff"
+          distance={1000}
+          decay={2}
+        />
+        
+        {/* Ambient light */}
+        <ambientLight intensity={0.4} color="#b0a0c0" />
+      </group>
     </group>
   );
 }

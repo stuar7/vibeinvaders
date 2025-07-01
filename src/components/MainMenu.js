@@ -1,28 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKeyboard } from '../hooks/useKeyboard';
+import OptionsMenu from './OptionsMenu';
 
 function MainMenu() {
-  const [selectedOption, setSelectedOption] = useState(0); // 0 = Linear Campaign, 1 = Free Flight
+  const [selectedOption, setSelectedOption] = useState(0); // 0 = Linear Campaign, 1 = Free Flight, 2 = Options
+  const [showOptions, setShowOptions] = useState(false);
   const keys = useKeyboard();
   const startGame = useGameStore((state) => state.startGame);
   const setGameMode = useGameStore((state) => state.setGameMode);
   
   const menuOptions = [
     { title: 'Linear Campaign', description: 'Play through structured levels with increasing difficulty' },
-    { title: 'Free Flight', description: 'Unlimited exploration with no boundaries or objectives' }
+    { title: 'Free Flight', description: 'Unlimited exploration with no boundaries or objectives' },
+    { title: 'Options', description: 'Configure game settings and controls' }
   ];
 
   // Define functions first
   const handleSelection = useCallback((optionIndex = selectedOption) => {
     if (optionIndex === 0) {
       // Linear Campaign
+      console.log('[MENU] Setting game mode to: campaign');
       setGameMode('campaign');
       startGame();
-    } else {
+    } else if (optionIndex === 1) {
       // Free Flight
+      console.log('[MENU] Setting game mode to: freeflight');
       setGameMode('freeflight');
       startGame();
+    } else if (optionIndex === 2) {
+      // Options
+      setShowOptions(true);
     }
   }, [selectedOption, setGameMode, startGame]);
 
@@ -46,6 +54,13 @@ function MainMenu() {
       setSelectedOption(1);
     }
   }, [keys.KeyB, keys.ArrowRight]);
+
+  useEffect(() => {
+    // O key - select Options
+    if (keys.KeyO) {
+      setSelectedOption(2);
+    }
+  }, [keys.KeyO]);
 
   useEffect(() => {
     // Enter key - confirm selection
@@ -149,6 +164,11 @@ function MainMenu() {
       }}>
         Debug: F key still available for direct free flight toggle
       </div>
+
+      {/* Options Menu */}
+      {showOptions && (
+        <OptionsMenu onClose={() => setShowOptions(false)} />
+      )}
     </div>
   );
 }

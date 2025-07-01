@@ -9,6 +9,9 @@ function FreeFlightCrosshair() {
   const playerPosition = useGameStore((state) => state.playerPosition);
   const playerRotation = useGameStore((state) => state.playerRotation);
   const weapons = useGameStore((state) => state.weapons);
+  const isZoomed = useGameStore((state) => state.isZoomed);
+  const zoomFOV = useGameStore((state) => state.zoomFOV);
+  const options = useGameStore((state) => state.options);
   
   useFrame(() => {
     if (!meshRef.current || !freeLookMode) return;
@@ -29,7 +32,13 @@ function FreeFlightCrosshair() {
     
     // Calculate crosshair position at engagement distance
     const currentWeapon = weapons.current;
-    const engagementDistance = currentWeapon === 'bfg' ? 100 : 60; // Distance where crosshair appears
+    let engagementDistance = currentWeapon === 'bfg' ? 100 : 60; // Distance where crosshair appears
+    
+    // Adjust engagement distance when zoomed for better precision
+    if (isZoomed) {
+      const zoomFactor = options.fov / zoomFOV; // e.g., 75/50 = 1.5x zoom
+      engagementDistance *= zoomFactor; // Increase distance proportionally to zoom
+    }
     
     const crosshairPos = missileSpawnPos.clone().add(
       shipDirection.clone().multiplyScalar(engagementDistance)

@@ -30,39 +30,29 @@ function Missile({ missile }) {
     switch (weaponType) {
       case 'laser':
         return (
-          <>
-            {/* Main beam - thin cylinder */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={15}>
-              <cylinderGeometry args={[0.02, 0.02, 6, 8]} />
-              <meshBasicMaterial color={color} transparent opacity={1.0} depthTest={false} />
-            </mesh>
-            {/* Outer glow effect */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={14}>
-              <cylinderGeometry args={[0.08, 0.08, 6, 8]} />
-              <meshBasicMaterial color={color} transparent opacity={0.3} depthTest={false} />
-            </mesh>
-            <pointLight color={color} intensity={15} distance={20} />
-          </>
+          // Simplified to single mesh for performance
+          <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={15}>
+            <cylinderGeometry args={[0.05, 0.05, 6, 6]} />
+            <meshBasicMaterial color={color} transparent opacity={0.8} depthTest={false} />
+          </mesh>
         );
       
       case 'chaingun':
         return (
-          <>
-            <mesh renderOrder={15}>
-              <sphereGeometry args={[projectileSize, 8, 6]} />
-              <meshBasicMaterial color={color} depthTest={false} />
-            </mesh>
-            <pointLight color={color} intensity={5} distance={10} />
-          </>
+          // Simplified to single mesh for performance
+          <mesh renderOrder={15}>
+            <sphereGeometry args={[projectileSize, 6, 4]} />
+            <meshBasicMaterial color={color} depthTest={false} />
+          </mesh>
         );
       
       case 'bfg':
         return (
           <>
-            <mesh renderOrder={15}>
+          <mesh renderOrder={15}>
               <sphereGeometry args={[projectileSize, 16, 12]} />
-              <meshBasicMaterial color={color} transparent opacity={0.9} depthTest={false} />
-            </mesh>
+            <meshBasicMaterial color={color} transparent opacity={0.9} depthTest={false} />
+          </mesh>
             <mesh renderOrder={14}>
               <sphereGeometry args={[projectileSize * 1.2, 16, 12]} />
               <meshBasicMaterial color={color} transparent opacity={0.3} depthTest={false} />
@@ -74,10 +64,10 @@ function Missile({ missile }) {
       case 'rocket':
         return (
           <>
-            <mesh>
-              <boxGeometry args={[0.2, 0.2, 1]} />
-              <meshBasicMaterial color={color} />
-            </mesh>
+          <mesh>
+            <boxGeometry args={[0.2, 0.2, 1]} />
+            <meshBasicMaterial color={color} />
+          </mesh>
             <mesh position={[0, 0, 0.7]}>
               <coneGeometry args={[0.15, 0.4, 6]} />
               <meshBasicMaterial color="#ff4400" />
@@ -93,10 +83,10 @@ function Missile({ missile }) {
       case 'charge':
         return (
           <>
-            <mesh>
+          <mesh>
               <sphereGeometry args={[projectileSize, 16, 12]} />
-              <meshBasicMaterial color={color} transparent opacity={0.9} />
-            </mesh>
+            <meshBasicMaterial color={color} transparent opacity={0.9} />
+          </mesh>
             <mesh>
               <sphereGeometry args={[projectileSize * 1.5, 16, 12]} />
               <meshBasicMaterial color={color} transparent opacity={0.3} wireframe />
@@ -115,7 +105,7 @@ function Missile({ missile }) {
         return (
           <>
             {/* Main bomb body - spherical */}
-            <mesh>
+          <mesh>
               <sphereGeometry args={[projectileSize, 12, 8]} />
               <meshBasicMaterial color="#333333" />
             </mesh>
@@ -141,7 +131,7 @@ function Missile({ missile }) {
               <mesh key={index} rotation={[0, rotation, 0]} position={[0, 0, projectileSize * 0.5]}>
                 <boxGeometry args={[0.1, projectileSize * 0.4, projectileSize * 0.6]} />
                 <meshBasicMaterial color="#666666" />
-              </mesh>
+          </mesh>
             ))}
             
             {/* Pulsing red light effect */}
@@ -157,7 +147,7 @@ function Missile({ missile }) {
         return (
           <>
             {/* Main rail projectile - elongated cylinder with electromagnetic effect */}
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
               <cylinderGeometry args={[0.06, 0.06, 8, 12]} />
               <meshStandardMaterial color="#00ffdd" emissive="#004466" emissiveIntensity={0.5} />
             </mesh>
@@ -192,37 +182,17 @@ function Missile({ missile }) {
                 opacity={0.3 + Math.sin(Date.now() * 0.02) * 0.2}
                 wireframe
               />
-            </mesh>
+          </mesh>
           </>
         );
       
       default:
         return (
-          <>
-            {/* Front cone - bright colored pointy tip */}
-            <mesh position={[0, 0, -1]} rotation={[0, 0, 0]} renderOrder={15}>
-              <coneGeometry args={[0.15, 1.0, 8]} />
-              <meshBasicMaterial color={color} depthTest={false} />
-            </mesh>
-            {/* Front cone rounded base - white */}
-            <mesh position={[0, 0, -0.4]} renderOrder={15}>
-              <sphereGeometry args={[0.15, 8, 6]} />
-              <meshBasicMaterial color="#ffffff" depthTest={false} />
-            </mesh>
-            
-            {/* Rear cone - bright colored pointy tip */}
-            <mesh position={[0, 0, 1]} rotation={[0, 0, Math.PI]} renderOrder={15}>
-              <coneGeometry args={[0.15, 1.0, 8]} />
-              <meshBasicMaterial color={color} depthTest={false} />
-            </mesh>
-            {/* Rear cone rounded base - white */}
-            <mesh position={[0, 0, 0.4]} renderOrder={15}>
-              <sphereGeometry args={[0.15, 8, 6]} />
-              <meshBasicMaterial color="#ffffff" depthTest={false} />
-            </mesh>
-            
-            <pointLight color={color} intensity={20} distance={30} />
-          </>
+          // Simplified to single mesh for performance
+          <mesh renderOrder={15}>
+            <sphereGeometry args={[0.15, 6, 4]} />
+            <meshBasicMaterial color={color} depthTest={false} />
+          </mesh>
         );
     }
   };

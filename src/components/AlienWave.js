@@ -51,7 +51,20 @@ function AlienWave({ level, difficultyMultiplier }) {
     const spawnType = spawnTypes[Math.floor(Math.random() * spawnTypes.length)];
     
     let spawnPosition, velocity, targetPosition;
-    const finalPosition = UnifiedGamespace.getSafeSpawnPosition(-45, gameMode); // Target combat zone instead of arbitrary -180
+    
+    // In free flight mode, spawn relative to player position, not world center
+    let finalPosition;
+    if (gameMode === 'freeflight') {
+      // Spawn aliens relative to player position in free flight mode
+      finalPosition = {
+        x: playerPosition.x + (Math.random() - 0.5) * 200, // Within 200 units of player
+        y: playerPosition.y + (Math.random() - 0.5) * 200,
+        z: playerPosition.z - 45 // In front of player
+      };
+    } else {
+      // Campaign mode uses fixed world positions
+      finalPosition = UnifiedGamespace.getSafeSpawnPosition(-45, gameMode);
+    }
     
     switch (spawnType) {
       case 'from_distance':
@@ -152,9 +165,19 @@ function AlienWave({ level, difficultyMultiplier }) {
   };
 
   const spawnBoss = () => {
-    const spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-450, gameMode); // Spawn near front boundary
+    // In free flight mode, spawn boss relative to player position
+    let spawnPosition;
+    if (gameMode === 'freeflight') {
+      spawnPosition = {
+        x: playerPosition.x + (Math.random() - 0.5) * 100, // Within 100 units of player
+        y: playerPosition.y + (Math.random() - 0.5) * 100,
+        z: playerPosition.z - 450 // Far in front of player
+      };
+    } else {
+      // Campaign mode uses fixed world positions
+      spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-450, gameMode);
+    }
     
-    console.log('👑 BOSS SPAWNING! Alien Commander incoming!');
     
     const boss = {
       id: `boss-${Date.now()}`,
@@ -185,12 +208,6 @@ function AlienWave({ level, difficultyMultiplier }) {
     // Boss spawning timer (every 30 seconds for testing)
     spawnRef.current.bossTimer += delta;
     
-    // Debug logging every 5 seconds with better precision
-    const bossTimerSeconds = Math.floor(spawnRef.current.bossTimer);
-    if (bossTimerSeconds % 5 === 0 && bossTimerSeconds !== spawnRef.current.lastLoggedBossTime) {
-      console.log(`Boss timer: ${bossTimerSeconds}s / ${spawnRef.current.bossInterval}s`);
-      spawnRef.current.lastLoggedBossTime = bossTimerSeconds;
-    }
     
     if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval) {
       spawnBoss();
@@ -305,7 +322,17 @@ function AlienWave({ level, difficultyMultiplier }) {
           console.log('Alien out of bounds, redirecting to gamezone:', { x: newX, y: newY, z: newZ });
           
           // Get a safe position within the gamezone near combat zone
-          const safePosition = UnifiedGamespace.getSafeSpawnPosition(-45, gameMode);
+          let safePosition;
+          if (gameMode === 'freeflight') {
+            // In free flight mode, return to position near player
+            safePosition = {
+              x: playerPosition.x + (Math.random() - 0.5) * 50,
+              y: playerPosition.y + (Math.random() - 0.5) * 50,
+              z: playerPosition.z - 45
+            };
+          } else {
+            safePosition = UnifiedGamespace.getSafeSpawnPosition(-45, gameMode);
+          }
           
           // Calculate direction to safe position
           const dx = safePosition.x - newX;

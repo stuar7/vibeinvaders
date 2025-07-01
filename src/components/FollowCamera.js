@@ -9,6 +9,8 @@ function FollowCamera() {
   const cameraRef = useRef();
   const playerPosition = useGameStore((state) => state.playerPosition);
   const playerRotation = useGameStore((state) => state.playerRotation);
+  const isZoomed = useGameStore((state) => state.isZoomed);
+  const zoomFOV = useGameStore((state) => state.zoomFOV);
   const { pointer } = useThree();
   
   // Star Fox 64-style camera state
@@ -52,7 +54,12 @@ function FollowCamera() {
       // Linear reduction: 0 velocity = no reduction, max velocity = max reduction
       const velocityRatio = Math.min(forwardVelocity / maxForwardVelocity, 1.0);
       const fovReduction = velocityRatio * maxFOVReduction;
-      const dynamicFOV = baseFOV - fovReduction;
+      let dynamicFOV = baseFOV - fovReduction;
+      
+      // Apply zoom if active (override dynamic FOV when zoomed)
+      if (isZoomed) {
+        dynamicFOV = zoomFOV;
+      }
       
       // Smoothly interpolate FOV changes
       cameraState.fov = cameraState.fov + (dynamicFOV - cameraState.fov) * 0.1;

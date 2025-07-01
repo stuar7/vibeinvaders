@@ -44,7 +44,9 @@ export function useKeyboard() {
       setKeys((prev) => {
         if (e.code in prev) {
           e.preventDefault();
-          return { ...prev, [e.code]: true };
+          const newState = { ...prev, [e.code]: true };
+          document._gameKeys = newState; // Store for stale closure fix
+          return newState;
         }
         return prev;
       });
@@ -54,7 +56,9 @@ export function useKeyboard() {
       setKeys((prev) => {
         if (e.code in prev) {
           e.preventDefault();
-          return { ...prev, [e.code]: false };
+          const newState = { ...prev, [e.code]: false };
+          document._gameKeys = newState; // Store for stale closure fix
+          return newState;
         }
         return prev;
       });
@@ -62,13 +66,21 @@ export function useKeyboard() {
 
     const handleMouseDown = (e) => {
       if (e.button === 0) { // Left mouse button
-        setKeys((prev) => ({ ...prev, MouseLeft: true }));
+        setKeys((prev) => {
+          const newState = { ...prev, MouseLeft: true };
+          document._gameKeys = newState; // Store for stale closure fix
+          return newState;
+        });
       }
     };
 
     const handleMouseUp = (e) => {
       if (e.button === 0) { // Left mouse button
-        setKeys((prev) => ({ ...prev, MouseLeft: false }));
+        setKeys((prev) => {
+          const newState = { ...prev, MouseLeft: false };
+          document._gameKeys = newState; // Store for stale closure fix
+          return newState;
+        });
       }
     };
 
@@ -91,12 +103,26 @@ export function useKeyboard() {
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('wheel', handleWheel, { passive: false });
 
+    // Also listen on canvas for pointer lock mode
+    const canvas = document.querySelector('canvas');
+    if (canvas) {
+      console.log('[MOUSE DEBUG] Adding mouse listeners to canvas');
+      canvas.addEventListener('mousedown', handleMouseDown);
+      canvas.addEventListener('mouseup', handleMouseUp);
+    }
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('wheel', handleWheel);
+      
+      const canvas = document.querySelector('canvas');
+      if (canvas) {
+        canvas.removeEventListener('mousedown', handleMouseDown);
+        canvas.removeEventListener('mouseup', handleMouseUp);
+      }
     };
   }, []);
 

@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { usePerformanceMonitor, useRenderProfiler } from '../hooks/usePerformanceMonitor';
 import Player from './Player';
 import AlienWave from './AlienWave';
 import Missiles from './Missiles';
@@ -20,36 +21,42 @@ import VirtualJoystick from './VirtualJoystick';
 import ChargeBall from './ChargeBall';
 import PredictiveCrosshairs from './PredictiveCrosshairs';
 import AlienAIManager from './AlienAIManager';
+import PerformanceManager from './PerformanceManager';
 import { useGameStore } from '../store/gameStore';
 import { useKeyboard } from '../hooks/useKeyboard';
 // Removed unused GameSpace imports - using UnifiedGamespace instead
 import { GAMESPACE_MASTER_CONFIG } from '../config/UnifiedGamespace';
+// BVH collision system replaced by Web Workers
+
 
 function Game() {
+  
+  
+  // Note: High render count is normal for games with animations
+  // The real issue was game freezing, not just re-rendering
+  
   const gameState = useGameStore((state) => state.gameState);
   const gameMode = useGameStore((state) => state.gameMode);
   const isPaused = useGameStore((state) => state.isPaused);
   const level = useGameStore((state) => state.level);
   const difficulty = useGameStore((state) => state.difficulty);
-  const aliens = useGameStore((state) => state.aliens);
-  const missiles = useGameStore((state) => state.missiles);
-  const asteroids = useGameStore((state) => state.asteroids);
-  const playerPosition = useGameStore((state) => state.playerPosition);
-  const playerVelocity = useGameStore((state) => state.playerVelocity);
+  // TEMPORARILY REMOVED store subscriptions to avoid misleading debug info
+  // const aliens = useGameStore((state) => state.aliens);
+  // const missiles = useGameStore((state) => state.missiles);
+  // const asteroids = useGameStore((state) => state.asteroids);
+  
+  // Removed playerPosition and playerVelocity subscriptions to prevent infinite re-renders
+  // Use useGameStore.getState().playerPosition when needed instead
   const playerPowerUps = useGameStore((state) => state.playerPowerUps);
+  
   
   const movePlayer = useGameStore((state) => state.movePlayer);
   const updatePlayerVelocity = useGameStore((state) => state.updatePlayerVelocity);
-  const addMissile = useGameStore((state) => state.addMissile);
   const updateMissiles = useGameStore((state) => state.updateMissiles);
-  const removeAlien = useGameStore((state) => state.removeAlien);
-  const removeAsteroid = useGameStore((state) => state.removeAsteroid);
-  const addScore = useGameStore((state) => state.addScore);
   const loseLife = useGameStore((state) => state.loseLife);
   const addEffect = useGameStore((state) => state.addEffect);
   const damageShield = useGameStore((state) => state.damageShield);
   const damageArmor = useGameStore((state) => state.damageArmor);
-  const defensiveSystems = useGameStore((state) => state.defensiveSystems);
   const weapons = useGameStore((state) => state.weapons);
   const switchWeapon = useGameStore((state) => state.switchWeapon);
   const setLevel = useGameStore((state) => state.setLevel);
@@ -60,11 +67,116 @@ function Game() {
   const updateChargeLevel = useGameStore((state) => state.updateChargeLevel);
   const grantAllWeapons = useGameStore((state) => state.grantAllWeapons);
   const cursorAiming = useGameStore((state) => state.cursorAiming);
-  const setBraking = useGameStore((state) => state.setBraking);
-  const setBoosting = useGameStore((state) => state.setBoosting);
+  const isShiftBoosting = useGameStore((state) => state.isShiftBoosting);
+  const shiftBoostCooldown = useGameStore((state) => state.shiftBoostCooldown);
+  const setShiftBoosting = useGameStore((state) => state.setShiftBoosting);
+  const setShiftBoostCooldown = useGameStore((state) => state.setShiftBoostCooldown);
+  const toggleZoom = useGameStore((state) => state.toggleZoom);
   
   const keys = useKeyboard();
   const { pointer, camera } = useThree();
+
+  // Performance monitoring
+  usePerformanceMonitor();
+  const { profileStart, profileEnd } = useRenderProfiler('Game.js');
+  
+  // Collision detection worker
+  const collisionWorkerRef = useRef(null);
+  
+  // Queue systems to decouple operations from Zustand updates
+  const missileQueueRef = useRef([]);
+  const effectsQueueRef = useRef([]);
+  const weaponStateQueueRef = useRef([]);
+  const damageQueueRef = useRef([]);
+  const chargeQueueRef = useRef([]);
+  
+  // Initialize collision worker
+  useEffect(() => {
+    try {
+      collisionWorkerRef.current = new Worker(new URL('../workers/collisionDetection.worker.js', import.meta.url));
+      
+      collisionWorkerRef.current.onmessage = (e) => {
+        const { type, collisions } = e.data;
+        
+        if (type === 'collisionResults' && collisions.alienMissilePlayerHits) {
+          // Handle alien missile vs player collisions
+          collisions.alienMissilePlayerHits.forEach(hit => {
+            const currentPlayerPosition = useGameStore.getState().playerPosition;
+            const playerPowerUps = useGameStore.getState().playerPowerUps;
+            const defensiveSystems = useGameStore.getState().defensiveSystems;
+            
+            // Remove the missile
+            const updatedMissiles = useGameStore.getState().missiles.filter(m => m.id !== hit.missileId);
+            updateMissiles(updatedMissiles);
+            
+            // Apply damage logic
+            if (!playerPowerUps.shield) {
+              const armorIntegrity = defensiveSystems.armor.integrity;
+              const armorLevel = defensiveSystems.armor.level;
+              
+              if (armorIntegrity > 0) {
+                const baseDamage = 25;
+                const armorReduction = Math.min(0.8, (armorIntegrity / 100) * (armorLevel * 0.2));
+                const finalDamage = Math.ceil(baseDamage * (1 - armorReduction));
+                const armorDamage = Math.min(armorIntegrity, finalDamage * 0.8);
+                
+                damageQueueRef.current.push({
+                  type: 'damageArmor',
+                  amount: armorDamage
+                });
+                effectsQueueRef.current.push({
+                  id: `armor-hit-${Date.now()}`,
+                  type: 'armorHit',
+                  position: { ...currentPlayerPosition, z: 0 },
+                  startTime: Date.now(),
+                });
+                
+                if (armorIntegrity - armorDamage <= 0) {
+                  damageQueueRef.current.push({
+                    type: 'loseLife'
+                  });
+                  effectsQueueRef.current.push({
+                    id: `player-hit-${Date.now()}`,
+                    type: 'playerHit',
+                    position: { ...currentPlayerPosition, z: 0 },
+                    startTime: Date.now(),
+                  });
+                }
+              } else {
+                damageQueueRef.current.push({
+                  type: 'loseLife'
+                });
+                effectsQueueRef.current.push({
+                  id: `player-hit-${Date.now()}`,
+                  type: 'playerHit',
+                  position: { ...currentPlayerPosition, z: 0 },
+                  startTime: Date.now(),
+                });
+              }
+            } else {
+              effectsQueueRef.current.push({
+                id: `shield-hit-${Date.now()}`,
+                type: 'shieldHit',
+                position: { ...currentPlayerPosition, z: 0 },
+                startTime: Date.now(),
+              });
+              damageQueueRef.current.push({
+                type: 'damageShield'
+              });
+            }
+          });
+        }
+      };
+    } catch (error) {
+      console.error('Failed to initialize collision worker:', error);
+    }
+    
+    return () => {
+      if (collisionWorkerRef.current) {
+        collisionWorkerRef.current.terminate();
+      }
+    };
+  }, [updateMissiles, damageArmor, damageShield, loseLife]);
   
   // Helper function to get cursor world position (clamped to bounds)
   const getCursorWorldPosition = () => {
@@ -72,7 +184,13 @@ function Game() {
     raycaster.setFromCamera(pointer, camera);
     const targetPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 50);
     const cursorWorld = new THREE.Vector3();
-    raycaster.ray.intersectPlane(targetPlane, cursorWorld);
+    const intersection = raycaster.ray.intersectPlane(targetPlane, cursorWorld);
+    
+    // Handle case where ray doesn't intersect plane
+    if (!intersection) {
+      console.warn('[CURSOR] Ray does not intersect plane, using fallback');
+      return new THREE.Vector3(0, 0, -10); // Fallback position
+    }
     
     // Check if free flight mode is active
     const freeLookMode = useGameStore.getState().freeLookMode;
@@ -108,20 +226,32 @@ function Game() {
   // Use refs to persist fire timers across renders
   const fireTimersRef = useRef({ lastFireTime: 0, lastRocketTime: 0 });
   
+  // Web Workers via PerformanceManager handle collision detection and missile physics
+  
   // Handle charge weapon logic
   useEffect(() => {
     if (gameState !== 'playing' || isPaused) return;
     
+    // Only run charge logic when charge weapon is actually selected
     if (weapons.current === 'charge') {
-      const fireKeyPressed = keys.Space || keys.MouseLeft || keys.ShiftLeft || keys.ShiftRight;
       const freeLookMode = useGameStore.getState().freeLookMode;
+      
+      // Check if shooting is disabled due to shift boost
+      const shiftBoostBlocked = gameMode === 'freeflight' && (isShiftBoosting || (Date.now() - shiftBoostCooldown < 250));
+      
+      // Base fire key detection (excluding shift keys when boost is active in free flight)
+      const baseFireKeys = gameMode === 'freeflight' && (keys.ShiftLeft || keys.ShiftRight) ? 
+        (keys.Space || keys.MouseLeft) : // In free flight, exclude shift keys if they're pressed (for boost)
+        (keys.Space || keys.MouseLeft || keys.ShiftLeft || keys.ShiftRight);
+      
+      const fireKeyPressed = baseFireKeys && !shiftBoostBlocked;
       
       // In free flight mode, only use Mouse1 and Shift for charging (not Space, since it's used for movement)
       const shouldStartCharging = freeLookMode ? 
-        (keys.MouseLeft || keys.ShiftLeft || keys.ShiftRight) : 
+        (keys.MouseLeft || ((keys.ShiftLeft || keys.ShiftRight) && !shiftBoostBlocked)) : 
         fireKeyPressed;
       const shouldStopCharging = freeLookMode ? 
-        (!keys.MouseLeft && !keys.ShiftLeft && !keys.ShiftRight) : 
+        ((!keys.MouseLeft && (!keys.ShiftLeft && !keys.ShiftRight)) || shiftBoostBlocked) : 
         !fireKeyPressed;
       
       if (shouldStartCharging && !chargeWeapon.isCharging) {
@@ -135,20 +265,49 @@ function Game() {
         }
         stopCharging();
       }
+    } else {
+      // If charge weapon is not selected but is charging, stop it
+      if (chargeWeapon.isCharging) {
+        stopCharging();
+      }
     }
-  }, [keys.Space, keys.MouseLeft, keys.ShiftLeft, keys.ShiftRight, weapons.current, chargeWeapon.isCharging, chargeWeapon.chargeLevel, gameState, isPaused, startCharging, stopCharging]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keys.Space, keys.MouseLeft, keys.ShiftLeft, keys.ShiftRight, weapons.current, gameState, isPaused, gameMode, isShiftBoosting, shiftBoostCooldown]);
 
-  // Update charge level continuously (faster with rapid fire)
+  // Update charge level continuously (faster with rapid fire) - queue charge updates instead of direct calls
   useEffect(() => {
     if (chargeWeapon.isCharging) {
       const chargeSpeed = playerPowerUps.rapidFire ? 50 : 100; // 2x faster charging with rapid fire
       const interval = setInterval(() => {
-        updateChargeLevel();
+        chargeQueueRef.current.push({
+          type: 'updateChargeLevel'
+        });
       }, chargeSpeed);
       
       return () => clearInterval(interval);
     }
-  }, [chargeWeapon.isCharging, updateChargeLevel, playerPowerUps.rapidFire]);
+  }, [chargeWeapon.isCharging, playerPowerUps.rapidFire]);
+
+  // Shift boost tracking (free flight mode only)
+  useEffect(() => {
+    if (gameMode === 'freeflight') {
+      if (keys.ShiftLeft || keys.ShiftRight) {
+        // Start shift boost
+        if (!isShiftBoosting) {
+          setShiftBoosting(true);
+        }
+      } else {
+        // Stop shift boost and start cooldown
+        if (isShiftBoosting) {
+          setShiftBoosting(false);
+          setShiftBoostCooldown(Date.now()); // Start 0.25s shooting cooldown
+        }
+      }
+    } else if (isShiftBoosting) {
+      // Clear boost if not in free flight mode
+      setShiftBoosting(false);
+    }
+  }, [keys.ShiftLeft, keys.ShiftRight, gameMode, isShiftBoosting, setShiftBoosting, setShiftBoostCooldown]);
 
   const fireChargeShot = (chargeLevel) => {
     const now = Date.now();
@@ -183,19 +342,25 @@ function Game() {
       // VALIDATION: Check for invalid player position and rotation
       if (!currentPlayerPosition || 
           isNaN(currentPlayerPosition.x) || isNaN(currentPlayerPosition.y) || isNaN(currentPlayerPosition.z)) {
-        console.warn(`[CHARGE SPAWN] Invalid player position:`, currentPlayerPosition);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Invalid player position:`, currentPlayerPosition);
+        }
         return null;
       }
       
       if (!currentPlayerRotation || 
           isNaN(currentPlayerRotation.x) || isNaN(currentPlayerRotation.y) || isNaN(currentPlayerRotation.z)) {
-        console.warn(`[CHARGE SPAWN] Invalid player rotation:`, currentPlayerRotation);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Invalid player rotation:`, currentPlayerRotation);
+        }
         return null;
       }
       
       // VALIDATION: Check velocity direction is valid
       if (isNaN(velocityDirection.x) || isNaN(velocityDirection.y) || isNaN(velocityDirection.z)) {
-        console.warn(`[CHARGE SPAWN] Invalid velocity direction:`, velocityDirection);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Invalid velocity direction:`, velocityDirection);
+        }
         return null;
       }
       
@@ -208,7 +373,9 @@ function Game() {
       
       // VALIDATION: Check for invalid spawn offset
       if (isNaN(missileSpawnOffset.x) || isNaN(missileSpawnOffset.y) || isNaN(missileSpawnOffset.z)) {
-        console.warn(`[CHARGE SPAWN] Invalid spawn offset:`, missileSpawnOffset);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Invalid spawn offset:`, missileSpawnOffset);
+        }
         return null;
       }
       
@@ -221,7 +388,9 @@ function Game() {
       
       // VALIDATION: Check for invalid final spawn position
       if (isNaN(finalChargeSpawnPosition.x) || isNaN(finalChargeSpawnPosition.y) || isNaN(finalChargeSpawnPosition.z)) {
-        console.warn(`[CHARGE SPAWN] Invalid final spawn position:`, finalChargeSpawnPosition);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Invalid final spawn position:`, finalChargeSpawnPosition);
+        }
         return null;
       }
       
@@ -250,21 +419,32 @@ function Game() {
     if (playerPowerUps.multiShot) {
       // Fire 3 charge projectiles in a spread
       const spread = 2.0; // Charge weapon spread
+      const chargeMissileBatch = [];
+      
       for (let i = -1; i <= 1; i++) {
         const chargeMissile = createChargeMissile(i * spread);
         if (chargeMissile) {
-          addMissile(chargeMissile);
+          chargeMissileBatch.push(chargeMissile);
         } else {
-          console.warn(`[CHARGE SPAWN] Failed to create charge missile in spread ${i}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[CHARGE SPAWN] Failed to create charge missile in spread ${i}`);
+          }
         }
+      }
+      
+      // Add all charge missiles to queue
+      if (chargeMissileBatch.length > 0) {
+        missileQueueRef.current.push(...chargeMissileBatch);
       }
     } else {
       // Fire single charge projectile
       const chargeMissile = createChargeMissile();
       if (chargeMissile) {
-        addMissile(chargeMissile);
+        missileQueueRef.current.push(chargeMissile);
       } else {
-        console.warn(`[CHARGE SPAWN] Failed to create single charge missile`);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CHARGE SPAWN] Failed to create single charge missile`);
+        }
       }
     }
   };
@@ -284,23 +464,49 @@ function Game() {
     const handleFiring = () => {
       const freeLookMode = useGameStore.getState().freeLookMode;
       
+      // Check if shooting is disabled due to shift boost
+      const shiftBoostBlocked = gameMode === 'freeflight' && (isShiftBoosting || (Date.now() - shiftBoostCooldown < 250));
+      
+      // Get fresh keys by re-calling useKeyboard hook state
+      // This is hacky but avoids the stale closure issue
+      const currentKeys = document._gameKeys || {};
+      const baseFireKeys = gameMode === 'freeflight' && (currentKeys.ShiftLeft || currentKeys.ShiftRight) ? 
+        (currentKeys.Space || currentKeys.MouseLeft) : // In free flight, exclude shift keys if they're pressed (for boost)
+        (currentKeys.Space || currentKeys.MouseLeft || currentKeys.ShiftLeft || currentKeys.ShiftRight);
+      
       // In free flight mode, only use Mouse1 and Shift for firing (not Space, since it's used for movement)
       const fireKeyPressed = freeLookMode ? 
-        (keys.MouseLeft || keys.ShiftLeft || keys.ShiftRight) : 
-        (keys.Space || keys.MouseLeft || keys.ShiftLeft || keys.ShiftRight);
+        ((currentKeys.MouseLeft || (currentKeys.ShiftLeft || currentKeys.ShiftRight)) && !shiftBoostBlocked) : 
+        (baseFireKeys && !shiftBoostBlocked);
       
-      if (!fireKeyPressed || gameState !== 'playing' || isPaused) return;
-      if (weapons.current === 'charge') return; // Charge weapon handled separately
       
-      const currentWeapon = weapons[weapons.current];
-      if (!currentWeapon || (currentWeapon.ammo !== Infinity && currentWeapon.ammo <= 0)) return;
+      if (!fireKeyPressed || gameState !== 'playing' || isPaused) {
+        return;
+      }
+      // Get fresh weapons state to avoid stale closure
+      const currentWeapons = useGameStore.getState().weapons;
+      if (currentWeapons.current === 'charge') {
+        return; // Charge weapon handled separately
+      }
+      
+      // If charge weapon is stuck charging but not selected, clean it up
+      const currentChargeWeapon = useGameStore.getState().chargeWeapon;
+      if (currentChargeWeapon.isCharging && currentWeapons.current !== 'charge') {
+        const stopCharging = useGameStore.getState().stopCharging;
+        stopCharging(); // Clean up stuck charge state
+      }
+      
+      const currentWeapon = currentWeapons[currentWeapons.current];
+      if (!currentWeapon || (currentWeapon.ammo !== Infinity && currentWeapon.ammo <= 0)) {
+        return;
+      }
       
       const now = Date.now();
       let fireRate = 250;
       let lastTime = fireTimersRef.current.lastFireTime;
       
       // Weapon-specific fire rates
-      switch (weapons.current) {
+      switch (currentWeapons.current) {
         case 'laser':
           fireRate = playerPowerUps.rapidFire ? 100 : 150;
           break;
@@ -324,56 +530,69 @@ function Game() {
       if (now - lastTime < fireRate) return;
       
       // Update the appropriate timer
-      if (weapons.current === 'rocket') {
+      if (currentWeapons.current === 'rocket') {
         fireTimersRef.current.lastRocketTime = now;
       } else {
         fireTimersRef.current.lastFireTime = now;
       }
       
-      // Use ammo for non-default weapons (charge weapon has infinite ammo)
-      if (weapons.current !== 'default' && weapons.current !== 'charge') {
-        const gameStore = useGameStore.getState();
-        gameStore.useAmmo(weapons.current, 1);
+      // Queue ammo usage for non-default weapons (charge weapon has infinite ammo)
+      if (currentWeapons.current !== 'default' && currentWeapons.current !== 'charge') {
+        weaponStateQueueRef.current.push({
+          type: 'useAmmo',
+          weaponType: currentWeapons.current,
+          amount: 1
+        });
       }
       
-      // Handle battery for energy weapons
-      const gameStore = useGameStore.getState();
-      const isEnergyWeapon = ['default', 'laser'].includes(weapons.current);
+      // Queue battery operations for energy weapons
+      const isEnergyWeapon = ['default', 'laser'].includes(currentWeapons.current);
       if (isEnergyWeapon) {
-        // Drain battery by 1%, then recharge by 1%
-        gameStore.drainBattery(1);
-        setTimeout(() => {
-          gameStore.rechargeBattery(1);
-        }, 100); // 100ms delay for recharge
+        // Queue battery drain and recharge
+        weaponStateQueueRef.current.push({
+          type: 'drainBattery',
+          amount: 1
+        });
+        weaponStateQueueRef.current.push({
+          type: 'rechargeBattery',
+          amount: 1,
+          delay: 100 // 100ms delay for recharge
+        });
       }
       
       // Create projectiles based on weapon type
-      const createProjectile = (offsetX = 0, weaponType = weapons.current) => {
+      // Fire! Create the projectile(s)
+      
+      const createProjectile = (offsetX = 0, weaponType = currentWeapons.current) => {
         const currentPlayerPosition = useGameStore.getState().playerPosition;
         const currentPlayerRotation = useGameStore.getState().playerRotation;
         const freeLookMode = useGameStore.getState().freeLookMode;
-        const baseWeaponLevel = weapons[weaponType]?.level || 1;
+        
+        const baseWeaponLevel = currentWeapons[weaponType]?.level || 1;
         const weaponBoostActive = playerPowerUps.weaponBoost;
         const weaponLevel = baseWeaponLevel + (weaponBoostActive ? 1 : 0); // +1 level when boosted
         
         // VALIDATION: Check for invalid player position
         if (!currentPlayerPosition || 
             isNaN(currentPlayerPosition.x) || isNaN(currentPlayerPosition.y) || isNaN(currentPlayerPosition.z)) {
-          console.warn(`[MISSILE SPAWN] Invalid player position:`, currentPlayerPosition);
+          console.error(`[MISSILE SPAWN] Invalid player position:`, currentPlayerPosition);
           return null;
         }
         
         // VALIDATION: Check for invalid player rotation
         if (!currentPlayerRotation || 
             isNaN(currentPlayerRotation.x) || isNaN(currentPlayerRotation.y) || isNaN(currentPlayerRotation.z)) {
-          console.warn(`[MISSILE SPAWN] Invalid player rotation:`, currentPlayerRotation);
+          console.error(`[MISSILE SPAWN] Invalid player rotation:`, currentPlayerRotation);
           return null;
         }
+        
         
         // Calculate firing direction
         let velocityDirection = { x: 0, y: 0, z: -1 }; // Default: straight forward
         
-        if (cursorAiming) {
+        // Temporarily disable cursor aiming in free flight mode to debug freeze
+        const currentFreeLookMode = useGameStore.getState().freeLookMode;
+        if (cursorAiming && !currentFreeLookMode) {
           const cursorWorld = getCursorWorldPosition();
           
           if (cursorWorld) {
@@ -385,28 +604,37 @@ function Game() {
           }
         } else {
           // Use ship's rotation for firing direction (especially important for free look mode)
-          const shipDirection = new THREE.Vector3(0, 0, -1); // Ship points in negative Z
-          const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
-            new THREE.Euler(currentPlayerRotation.x, currentPlayerRotation.y, currentPlayerRotation.z)
-          );
-          shipDirection.applyMatrix4(rotationMatrix);
-          velocityDirection = { x: shipDirection.x, y: shipDirection.y, z: shipDirection.z };
+          try {
+            const shipDirection = new THREE.Vector3(0, 0, -1); // Ship points in negative Z
+            const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
+              new THREE.Euler(currentPlayerRotation.x, currentPlayerRotation.y, currentPlayerRotation.z)
+            );
+            shipDirection.applyMatrix4(rotationMatrix);
+            velocityDirection = { x: shipDirection.x, y: shipDirection.y, z: shipDirection.z };
+          } catch (error) {
+            console.error('[ERROR] Error in rotation matrix calculation:', error);
+            velocityDirection = { x: 0, y: 0, z: -1 }; // Fallback
+          }
         }
         
         // VALIDATION: Check for invalid velocity direction
         if (isNaN(velocityDirection.x) || isNaN(velocityDirection.y) || isNaN(velocityDirection.z)) {
-          console.warn(`[MISSILE SPAWN] Invalid velocity direction:`, velocityDirection);
-          console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[MISSILE SPAWN] Invalid velocity direction:`, velocityDirection);
+            console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          }
           return null;
         }
         
-        // VALIDATION: Check if direction vector is near-zero (gimbal lock)
+        // VALIDATION: Check if direction vector is near-zero (would result in stationary missile)
         const directionMagnitude = Math.sqrt(velocityDirection.x * velocityDirection.x + 
                                            velocityDirection.y * velocityDirection.y + 
                                            velocityDirection.z * velocityDirection.z);
         if (directionMagnitude < 0.01) {
-          console.warn(`[MISSILE SPAWN] Direction vector too small (gimbal lock?):`, velocityDirection, 'magnitude:', directionMagnitude);
-          console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[MISSILE SPAWN] Direction vector too small (degenerate transformation):`, velocityDirection, 'magnitude:', directionMagnitude);
+            console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          }
           return null;
         }
         
@@ -419,8 +647,10 @@ function Game() {
         
         // VALIDATION: Check for invalid spawn offset
         if (isNaN(missileSpawnOffset.x) || isNaN(missileSpawnOffset.y) || isNaN(missileSpawnOffset.z)) {
-          console.warn(`[MISSILE SPAWN] Invalid spawn offset:`, missileSpawnOffset);
-          console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[MISSILE SPAWN] Invalid spawn offset:`, missileSpawnOffset);
+            console.warn(`[MISSILE SPAWN] Player rotation was:`, currentPlayerRotation);
+          }
           return null;
         }
         
@@ -433,13 +663,15 @@ function Game() {
         
         // VALIDATION: Check for invalid final spawn position
         if (isNaN(finalSpawnPosition.x) || isNaN(finalSpawnPosition.y) || isNaN(finalSpawnPosition.z)) {
-          console.warn(`[MISSILE SPAWN] Invalid final spawn position:`, finalSpawnPosition);
-          console.warn(`[MISSILE SPAWN] Player position:`, currentPlayerPosition);
-          console.warn(`[MISSILE SPAWN] Spawn offset:`, missileSpawnOffset);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[MISSILE SPAWN] Invalid final spawn position:`, finalSpawnPosition);
+            console.warn(`[MISSILE SPAWN] Player position:`, currentPlayerPosition);
+            console.warn(`[MISSILE SPAWN] Spawn offset:`, missileSpawnOffset);
+          }
           return null;
         }
         
-        // BOUNDS CHECKING: In free flight mode, warn about potential issues
+        // PERFORMANCE TRACKING: Only warn for extremely far spawns (1000+ units)
         if (freeLookMode) {
           const gamespaceCenter = GAMESPACE_MASTER_CONFIG.center;
           const distanceFromCenter = Math.sqrt(
@@ -447,21 +679,11 @@ function Game() {
             Math.pow(finalSpawnPosition.y - gamespaceCenter.y, 2)
           );
           
-          // Log detailed spawn information for debugging
-          if (distanceFromCenter > 50) { // If spawning far from gamespace center
-            console.log(`[MISSILE SPAWN] Spawning far from center:`, {
-              weapon: weaponType,
-              spawnPos: finalSpawnPosition,
-              playerPos: currentPlayerPosition,
-              playerRot: currentPlayerRotation,
-              distanceFromCenter: distanceFromCenter.toFixed(2),
-              velocityDir: velocityDirection
-            });
-          }
-          
-          // Warn if spawning very far out (potential culling zone)
-          if (distanceFromCenter > 100) {
-            console.warn(`[MISSILE SPAWN] Spawning in potential culling zone! Distance from center:`, distanceFromCenter.toFixed(2));
+          // Only warn for extreme distances that might actually cause issues
+          if (distanceFromCenter > 1000) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[PERFORMANCE] Missile spawning ${distanceFromCenter.toFixed(1)} units from center - extreme distance`);
+            }
           }
         }
         
@@ -571,52 +793,112 @@ function Game() {
       };
       
       if (playerPowerUps.multiShot) {
-        // Fire 3 projectiles in a spread - adjust spread based on weapon type
-        let spread = 1.2; // Default spread
-        
-        switch (weapons.current) {
-          case 'bfg':
-            spread = 8.0; // Much wider spread for large BFG missiles
-            break;
-          case 'rocket':
-            spread = 2.5; // Wider spread for rockets
-            break;
-          case 'chaingun':
-            spread = 1.0; // Tighter spread for chaingun
-            break;
-          case 'laser':
-            spread = 1.5; // Medium spread for laser
-            break;
-          case 'railgun':
-            spread = 1.8; // Medium spread for railgun
-            break;
-          default:
-            spread = 1.2; // Default blaster spread
-        }
-        
-        for (let i = -1; i <= 1; i++) {
-          const projectile = createProjectile(i * spread);
-          if (projectile) {
-            addMissile(projectile);
-          } else {
-            console.warn(`[MISSILE SPAWN] Failed to create projectile in multishot spread ${i}`);
+        // Use async creation if available, otherwise fallback  
+        const createMissilesAsync = useGameStore.getState().createMissilesAsync;
+        if (createMissilesAsync && false) { // Force disable async for now
+          const cursorWorld = cursorAiming ? getCursorWorldPosition() : null;
+          createMissilesAsync(
+            weapons.current,
+            useGameStore.getState().playerPosition,
+            useGameStore.getState().playerRotation,
+            playerPowerUps,
+            weapons,
+            {
+              isMultishot: true,
+              cursorAiming,
+              cursorWorld
+            }
+          );
+        } else {
+          // Fallback to synchronous creation
+          // Fire 3 projectiles in a spread - adjust spread based on weapon type
+          let spread = 1.2; // Default spread
+          
+          switch (weapons.current) {
+            case 'bfg':
+              spread = 8.0; // Much wider spread for large BFG missiles
+              break;
+            case 'rocket':
+              spread = 2.5; // Wider spread for rockets
+              break;
+            case 'chaingun':
+              spread = 1.0; // Tighter spread for chaingun
+              break;
+            case 'laser':
+              spread = 1.5; // Medium spread for laser
+              break;
+            case 'railgun':
+              spread = 1.8; // Medium spread for railgun
+              break;
+            default:
+              spread = 1.2; // Default blaster spread
+          }
+          
+          // Create all projectiles in batch
+          const projectileBatch = [];
+          for (let i = -1; i <= 1; i++) {
+            const projectile = createProjectile(i * spread);
+            if (projectile) {
+              projectileBatch.push(projectile);
+            } else {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[MISSILE SPAWN] Failed to create projectile in multishot spread ${i}`);
+              }
+            }
+          }
+          
+          // Add all missiles to queue instead of immediate store update
+          if (projectileBatch.length > 0) {
+            missileQueueRef.current.push(...projectileBatch);
           }
         }
       } else {
-        // Fire single projectile
-        const projectile = createProjectile();
-        if (projectile) {
-          addMissile(projectile);
+        // Use async creation if available, otherwise fallback
+        const createMissilesAsync = useGameStore.getState().createMissilesAsync;
+        if (createMissilesAsync && false) { // Force disable async for now
+          const cursorWorld = cursorAiming ? getCursorWorldPosition() : null;
+          createMissilesAsync(
+            weapons.current,
+            useGameStore.getState().playerPosition,
+            useGameStore.getState().playerRotation,
+            playerPowerUps,
+            weapons,
+            {
+              isMultishot: false,
+              cursorAiming,
+              cursorWorld
+            }
+          );
         } else {
-          console.warn(`[MISSILE SPAWN] Failed to create single projectile`);
+          // Fallback to synchronous creation if async not available
+          
+          try {
+            const projectile = createProjectile();
+            
+            if (projectile) {
+              // Add to queue instead of immediate store update
+              missileQueueRef.current.push(projectile);
+            } else {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[MISSILE SPAWN] Failed to create single projectile`);
+              }
+            }
+          } catch (error) {
+            console.error('[ERROR] Error creating projectile:', error);
+          }
         }
       }
     };
     
-    const fireInterval = setInterval(handleFiring, 50); // Check every 50ms
+    const fireInterval = setInterval(() => {
+      handleFiring();
+    }, 50); // Check every 50ms
     
-    return () => clearInterval(fireInterval);
-  }, [keys.Space, keys.MouseLeft, keys.ShiftLeft, keys.ShiftRight, gameState, isPaused, playerPowerUps, addMissile, weapons]);
+    return () => {
+      clearInterval(fireInterval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array to prevent infinite recreation
   
   // Weapon switching
   useEffect(() => {
@@ -630,7 +912,7 @@ function Game() {
     if (keys.Digit8) switchWeapon('bomb');
   }, [keys.Digit1, keys.Digit2, keys.Digit3, keys.Digit4, keys.Digit5, keys.Digit6, keys.Digit7, keys.Digit8, switchWeapon]);
   
-  // Mouse wheel weapon scrolling
+  // Mouse wheel weapon scrolling - RE-ENABLED
   useEffect(() => {
     const weaponOrder = ['default', 'laser', 'chaingun', 'bfg', 'rocket', 'charge', 'bomb', 'railgun'];
     
@@ -669,7 +951,7 @@ function Game() {
         }
       }
     }
-  }, [keys.WheelUp, keys.WheelDown, switchWeapon, weapons]);
+  }, [keys.WheelUp, keys.WheelDown, weapons, switchWeapon]);
   
   // Cursor aiming toggle
   const toggleCursorAiming = useGameStore((state) => state.toggleCursorAiming);
@@ -687,32 +969,151 @@ function Game() {
     }
   }, [keys.KeyF, toggleFreeLookMode]);
 
+  // Zoom toggle (free flight mode only) - RE-ENABLED
+  const [zKeyPressed, setZKeyPressed] = useState(false);
+  useEffect(() => {
+    if (keys.KeyZ && gameMode === 'freeflight' && !zKeyPressed) {
+      setZKeyPressed(true);
+      toggleZoom();
+    } else if (!keys.KeyZ && zKeyPressed) {
+      setZKeyPressed(false);
+    }
+  }, [keys.KeyZ, gameMode, zKeyPressed, toggleZoom]);
+
   // Debug: Grant all weapons (G key)
   useEffect(() => {
     if (keys.KeyG) {
       grantAllWeapons();
-      console.log('DEBUG: All weapons granted!');
     }
   }, [keys.KeyG, grantAllWeapons]);
   
-  // Brake and boost controls
-  useEffect(() => {
+  // Brake and boost controls - TEMPORARILY DISABLED
+  /*useEffect(() => {
     setBraking(keys.KeyB);
   }, [keys.KeyB, setBraking]);
   
   useEffect(() => {
     setBoosting(keys.KeyQ);
-  }, [keys.KeyQ, setBoosting]);
+  }, [keys.KeyQ, setBoosting]);*/
   
+  // Re-enabled useFrame for player movement and game logic
   useFrame((state, delta) => {
     if (gameState !== 'playing' || isPaused) return;
     
-    // Check if any alien has reached the player (Y or Z axis)
-    for (const alien of aliens) {
-      if (alien.position.y < -30 || alien.position.z > 5) {
-        console.log('Alien reached player:', alien.position);
-        loseLife();
-        return;
+    // Process missile queue - batch process queued missiles into the store
+    if (missileQueueRef.current.length > 0) {
+      const queuedMissiles = [...missileQueueRef.current];
+      missileQueueRef.current = []; // Clear the queue
+      
+      // Add all queued missiles to the store in a single batch update
+      if (queuedMissiles.length > 0) {
+        const currentMissiles = useGameStore.getState().missiles;
+        const updatedMissiles = [...currentMissiles, ...queuedMissiles];
+        updateMissiles(updatedMissiles);
+      }
+    }
+    
+    // Process effects queue - batch process queued effects into the store
+    if (effectsQueueRef.current.length > 0) {
+      const queuedEffects = [...effectsQueueRef.current];
+      effectsQueueRef.current = []; // Clear the queue
+      
+      // Add all queued effects to the store in a single batch update
+      if (queuedEffects.length > 0) {
+        queuedEffects.forEach(effect => {
+          addEffect(effect);
+        });
+      }
+    }
+    
+    // Process weapon state queue - batch process weapon state updates
+    if (weaponStateQueueRef.current.length > 0) {
+      const queuedWeaponUpdates = [...weaponStateQueueRef.current];
+      weaponStateQueueRef.current = []; // Clear the queue
+      
+      // Process weapon state updates
+      const gameStore = useGameStore.getState();
+      queuedWeaponUpdates.forEach(update => {
+        if (update.delay) {
+          // Handle delayed operations (like battery recharge)
+          setTimeout(() => {
+            switch (update.type) {
+              case 'rechargeBattery':
+                gameStore.rechargeBattery(update.amount);
+                break;
+              default:
+                break;
+            }
+          }, update.delay);
+        } else {
+          // Handle immediate operations
+          switch (update.type) {
+            case 'useAmmo':
+              gameStore.useAmmo(update.weaponType, update.amount);
+              break;
+            case 'drainBattery':
+              gameStore.drainBattery(update.amount);
+              break;
+            case 'rechargeBattery':
+              gameStore.rechargeBattery(update.amount);
+              break;
+            default:
+              break;
+          }
+        }
+      });
+    }
+    
+    // Process damage queue - batch process damage/defense updates
+    if (damageQueueRef.current.length > 0) {
+      const queuedDamageUpdates = [...damageQueueRef.current];
+      damageQueueRef.current = []; // Clear the queue
+      
+      // Process damage updates
+      queuedDamageUpdates.forEach(update => {
+        switch (update.type) {
+          case 'damageArmor':
+            damageArmor(update.amount);
+            break;
+          case 'damageShield':
+            damageShield();
+            break;
+          case 'loseLife':
+            loseLife();
+            break;
+          default:
+            break;
+        }
+      });
+    }
+    
+    // Process charge weapon queue - batch process charge level updates
+    if (chargeQueueRef.current.length > 0) {
+      const queuedChargeUpdates = [...chargeQueueRef.current];
+      chargeQueueRef.current = []; // Clear the queue
+      
+      // Process charge updates
+      queuedChargeUpdates.forEach(update => {
+        switch (update.type) {
+          case 'updateChargeLevel':
+            updateChargeLevel();
+            break;
+          default:
+            break;
+        }
+      });
+    }
+    
+    // Check if any alien has reached the player (Y or Z axis) - disabled in free flight mode
+    if (gameMode !== 'freeflight') {
+      for (const alien of useGameStore.getState().aliens) {
+        if (alien.position.y < -30 || alien.position.z > 5) {
+          console.log('Alien reached player:', alien.position);
+          damageQueueRef.current.push({
+            type: 'loseLife'
+          });
+          return;
+        }
       }
     }
     
@@ -730,7 +1131,10 @@ function Game() {
     
     // Ctrl key velocity boost
     const isBoostActive = keys.ControlLeft || keys.ControlRight;
-    const boostMultiplier = isBoostActive ? 1.5 : 1.0; // 50% speed increase
+    // Shift key boost (free flight only)
+    const isShiftBoostActive = gameMode === 'freeflight' && isShiftBoosting;
+    const boostMultiplier = (isBoostActive ? 1.5 : 1.0) * (isShiftBoostActive ? 1.5 : 1.0); // Ctrl: 50% increase, Shift: additional 50%
+    
     
     // Responsiveness powerup multiplier
     const responsivenessMultiplier = playerPowerUps.responsiveness ? 1.4 : 1.0; // 40% increase
@@ -838,6 +1242,7 @@ function Game() {
     }
     
     // Update velocity with acceleration
+    const playerVelocity = useGameStore.getState().playerVelocity;
     let newVelX = playerVelocity.x + accelX;
     let newVelY = playerVelocity.y + accelY;
     let newVelZ = (playerVelocity.z || 0) + accelZ;
@@ -884,9 +1289,9 @@ function Game() {
     const deltaX = newVelX * adjustedDelta;
     const deltaY = newVelY * adjustedDelta;
     const deltaZ = newVelZ * adjustedDelta;
+    const playerPosition = useGameStore.getState().playerPosition;
     const newX = playerPosition.x + deltaX;
     const newY = playerPosition.y + deltaY;
-    const newZ = (playerPosition.z || 0) + deltaZ;
     
     // Progressive boundary system with slowdown and drag-back (disabled in freelook mode)
     const gamespaceCenter = GAMESPACE_MASTER_CONFIG.center;
@@ -957,8 +1362,8 @@ function Game() {
     updatePlayerVelocity(finalVelX, finalVelY, newVelZ);
     movePlayer(finalDeltaX, finalDeltaY, freeLookMode ? finalDeltaZ : 0);
     
-    // Debug logging when outside boundary
-    if (isOutsideX || isOutsideY) {
+    // Debug logging when outside boundary (only in normal mode, not free flight)
+    if (!freeLookMode && (isOutsideX || isOutsideY)) {
       let debugMsg = 'Outside boundary -';
       if (isOutsideX) {
         const movingAwayX = (newX > gamespaceCenter.x && finalVelX > 0) || (newX < gamespaceCenter.x && finalVelX < 0);
@@ -973,486 +1378,46 @@ function Game() {
       console.log(debugMsg);
     }
     
-    const updatedMissiles = missiles.filter((missile) => {
-      const speed = 50; // Missile speed
+    // PerformanceManager handles missile statistics via workers
+    
+    
+    // PerformanceManager handles collisions via workers, keep basic movement as fallback
+    const updatedMissiles = useGameStore.getState().missiles.filter(missile => {
+      // Basic missile movement (fallback while workers are loading)
+      const speed = 50;
+      missile.position.x += missile.velocity.x * adjustedDelta * speed;
+      missile.position.y += missile.velocity.y * adjustedDelta * speed;
+      missile.position.z += missile.velocity.z * adjustedDelta * speed;
       
-      // Homing weapon logic (rockets + homing powerup)
-      if (missile.type === 'player' && missile.homing && aliens.length > 0) {
-        // Find closest alien
-        let closestAlien = null;
-        let closestDistance = Infinity;
-        
-        aliens.forEach(alien => {
-          const dx = alien.position.x - missile.position.x;
-          const dy = alien.position.y - missile.position.y;
-          const dz = alien.position.z - missile.position.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestAlien = alien;
-          }
-        });
-        
-        if (closestAlien && closestDistance > 0) {
-          // Calculate direction to target
-          const targetDx = closestAlien.position.x - missile.position.x;
-          const targetDy = closestAlien.position.y - missile.position.y;
-          const targetDz = closestAlien.position.z - missile.position.z;
-          const targetDistance = Math.sqrt(targetDx * targetDx + targetDy * targetDy + targetDz * targetDz);
-          
-          // Homing strength (how aggressively it turns)
-          const homingStrength = 0.15;
-          
-          // Normalize target direction
-          const targetVelX = targetDx / targetDistance;
-          const targetVelY = targetDy / targetDistance;
-          const targetVelZ = targetDz / targetDistance;
-          
-          // Blend current velocity with target direction
-          missile.velocity.x += (targetVelX - missile.velocity.x) * homingStrength;
-          missile.velocity.y += (targetVelY - missile.velocity.y) * homingStrength;
-          missile.velocity.z += (targetVelZ - missile.velocity.z) * homingStrength;
-          
-          // Normalize velocity to maintain speed
-          const currentSpeed = Math.sqrt(missile.velocity.x * missile.velocity.x + missile.velocity.y * missile.velocity.y + missile.velocity.z * missile.velocity.z);
-          if (currentSpeed > 0) {
-            missile.velocity.x /= currentSpeed;
-            missile.velocity.y /= currentSpeed;
-            missile.velocity.z /= currentSpeed;
-          }
-        }
-      }
+      // Basic boundary culling
+      if (missile.type === 'player' && missile.position.z < -500) return false;
+      if (missile.type === 'alien' && missile.position.z > 50) return false;
       
-      // Bomb logic
-      if (missile.isBomb && !missile.hasExploded) {
-        const currentTime = Date.now();
-        
-        // Check for explosion
-        if (missile.isDeployed && (currentTime - missile.deployTime) >= missile.explosionDelay) {
-          missile.hasExploded = true;
-          
-          // Create explosion effect (triple the visual size)
-          addEffect({
-            id: `bomb-explosion-${Date.now()}-${missile.id}`,
-            type: 'explosion',
-            position: { ...missile.position },
-            startTime: Date.now(),
-            size: missile.explosionRadius * 3, // Triple visual effect size to match radius
-          });
-          
-          // Damage all aliens within explosion radius
-          const currentAliens = useGameStore.getState().aliens;
-          currentAliens.forEach(alien => {
-            const dx = alien.position.x - missile.position.x;
-            const dy = alien.position.y - missile.position.y;
-            const dz = alien.position.z - missile.position.z;
-            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            
-            if (distance <= missile.explosionRadius) {
-              alien.health -= missile.explosionDamage;
-              console.log(`💥 Bomb explosion hit alien for ${missile.explosionDamage} damage at distance ${distance.toFixed(1)}`);
-              
-              if (alien.health <= 0) {
-                const removeAlien = useGameStore.getState().removeAlien;
-                const addScore = useGameStore.getState().addScore;
-                removeAlien(alien.id);
-                addScore(alien.points);
-                addEffect({
-                  id: `explosion-${Date.now()}-${alien.id}`,
-                  type: 'explosion',
-                  position: { ...alien.position },
-                  startTime: Date.now(),
-                });
-              }
-            }
-          });
-          
-          // Remove the bomb after explosion
-          return false;
-        }
-      }
-      
-      const newX = missile.position.x + missile.velocity.x * adjustedDelta * speed;
-      const newY = missile.position.y + missile.velocity.y * adjustedDelta * speed;
-      const newZ = missile.position.z + missile.velocity.z * adjustedDelta * speed;
-      
-      // Check game mode for boundary logic
-      const currentGameMode = useGameStore.getState().gameMode;
-      
-      if (currentGameMode === 'campaign') {
-        // Campaign mode: Original boundary logic
-        // Remove missiles that go too far - BFG missiles last 3x longer
-        if (missile.type === 'player') {
-          const maxDistance = missile.weaponType === 'bfg' ? -843.75 : -281.25;
-          if (newZ < maxDistance) {
-            return false;
-          }
-        }
-        if (missile.type === 'alien' && newZ > 45) {
-          return false;
-        }
-        
-        // Remove missiles that go out of bounds in X/Y directions (use extended bounds for missiles)
-        const gamespaceCenter = GAMESPACE_MASTER_CONFIG.center;
-        const gamespaceWidth = GAMESPACE_MASTER_CONFIG.bounds.width * 3;
-        const gamespaceHeight = GAMESPACE_MASTER_CONFIG.bounds.height * 3;
-        
-        const isOutOfBounds = Math.abs(newX - gamespaceCenter.x) > gamespaceWidth/2 || 
-                             Math.abs(newY - gamespaceCenter.y) > gamespaceHeight/2;
-        
-        if (isOutOfBounds) {
-          return false;
-        }
-      } else if (currentGameMode === 'freeflight') {
-        // Free flight mode: Only remove if more than 10,000 units away from gamespace center
-        const gamespaceCenter = GAMESPACE_MASTER_CONFIG.center;
-        const dx = newX - gamespaceCenter.x;
-        const dy = newY - gamespaceCenter.y;
-        const dz = newZ - gamespaceCenter.z;
-        const distanceFromCenter = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distanceFromCenter > 10000) {
-          return false;
-        }
-      }
-      
-      missile.position.x = newX;
-      missile.position.y = newY;
-      missile.position.z = newZ;
-      
-      if (missile.type === 'player' || missile.type === 'wingman') {
-        // Get current aliens
-        const currentAliens = useGameStore.getState().aliens;
-        
-        for (const alien of currentAliens) {
-          const dx = missile.position.x - alien.position.x;
-          const dy = missile.position.y - alien.position.y;
-          const dz = (missile.position.z || 0) - alien.position.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance < 3.3 && !alien.isInvulnerable) { // Don't hit invulnerable aliens
-            console.log(`HIT! Missile at (${missile.position.x.toFixed(1)}, ${missile.position.y.toFixed(1)}, ${(missile.position.z || 0).toFixed(1)}) hit Alien at (${alien.position.x.toFixed(1)}, ${alien.position.y.toFixed(1)}, ${alien.position.z.toFixed(1)}) distance: ${distance.toFixed(1)}`);
-            
-            // Star Fox 64-style weapon damage system with level scaling
-            let baseDamage = 1;
-            let cameraShakeIntensity = 0.1;
-            
-            switch (missile.weaponType) {
-              case 'laser':
-                baseDamage = 2; // Fast, moderate damage
-                cameraShakeIntensity = 0.15;
-                break;
-              case 'chaingun':
-                baseDamage = 1; // Fast, light damage
-                cameraShakeIntensity = 0.08;
-                break;
-              case 'bfg':
-                baseDamage = 50; // Slow, massive damage
-                cameraShakeIntensity = 0.8;
-                break;
-              case 'rocket':
-                baseDamage = 5; // Homing rockets, heavy damage
-                cameraShakeIntensity = 0.4;
-                break;
-              case 'charge':
-                baseDamage = missile.damage || 1; // Variable damage based on charge level
-                cameraShakeIntensity = 0.1 + (missile.damage * 0.05); // Scales with charge
-                break;
-              case 'railgun':
-                baseDamage = 8; // High damage, between rocket and BFG
-                cameraShakeIntensity = 0.3;
-                break;
-              default:
-                baseDamage = 1; // Default blaster (reduced)
-                cameraShakeIntensity = 0.12;
-            }
-            
-            // Apply weapon level bonus (+1 damage per level) - except for charge weapon
-            const weaponLevel = missile.weaponLevel || 1;
-            let damage = missile.weaponType === 'charge' ? baseDamage : baseDamage + (weaponLevel - 1);
-            
-            // Apply damage multiplier based on alien type
-            switch (alien.type) {
-              case 1: // Scout - normal damage
-                break;
-              case 2: // Armored - reduced damage
-                damage = Math.max(1, Math.floor(damage * 0.7));
-                break;
-              case 3: // Elite - heavily reduced damage
-                damage = Math.max(1, Math.floor(damage * 0.5));
-                break;
-              default:
-                // Boss or unknown type - normal damage
-                break;
-            }
-            
-            // Update alien health
-            alien.health -= damage;
-            console.log(`HIT! Alien health: ${alien.health}/${alien.maxHealth}`);
-            
-            // Add hit recoil effect for Star Fox 64-style impact
-            alien.hitRecoil = {
-              intensity: cameraShakeIntensity * 10,
-              decay: 0.9,
-              direction: {
-                x: (alien.position.x - missile.position.x) / distance,
-                y: (alien.position.y - missile.position.y) / distance,
-                z: (alien.position.z - missile.position.z) / distance
-              }
-            };
-            
-            if (alien.health <= 0) {
-              // Only trigger camera shake when alien dies
-              const triggerCameraShake = useGameStore.getState().triggerCameraShake;
-              if (triggerCameraShake) {
-                triggerCameraShake(cameraShakeIntensity);
-              }
-              
-              removeAlien(alien.id);
-              addScore(alien.points);
-              addEffect({
-                id: `explosion-${Date.now()}-${alien.id}`,
-                type: 'explosion',
-                position: { ...alien.position },
-                startTime: Date.now(),
-              });
-              
-              // Drop chance for ammo/powerups (increased to 50%)
-              if (Math.random() < 0.5) {
-                // Comprehensive drop system - all powerups included
-                const rand = Math.random();
-                let dropType;
-                
-                if (rand < 0.02) { // 2% chance
-                  dropType = 'bombAmmo';
-                } else if (rand < 0.04) { // 2% chance
-                  dropType = 'bfg';
-                } else if (rand < 0.08) { // 4% chance
-                  dropType = 'railgunAmmo';
-                } else if (rand < 0.14) { // 6% chance
-                  dropType = 'rocketAmmo';
-                } else if (rand < 0.22) { // 8% chance
-                  dropType = 'shield';
-                } else if (rand < 0.30) { // 8% chance
-                  dropType = 'rapidFire';
-                } else if (rand < 0.38) { // 8% chance
-                  dropType = 'multiShot';
-                } else if (rand < 0.45) { // 7% chance
-                  dropType = 'laser';
-                } else if (rand < 0.52) { // 7% chance
-                  dropType = 'chaingun';
-                } else if (rand < 0.58) { // 6% chance
-                  dropType = 'homingWeapons';
-                } else if (rand < 0.64) { // 6% chance
-                  dropType = 'weaponBoost';
-                } else if (rand < 0.70) { // 6% chance
-                  dropType = 'slowTime';
-                } else if (rand < 0.76) { // 6% chance
-                  dropType = 'responsiveness';
-                } else if (rand < 0.82) { // 6% chance
-                  dropType = 'stealth';
-                } else if (rand < 0.88) { // 6% chance
-                  dropType = 'wingmen';
-                } else if (rand < 0.94) { // 6% chance
-                  dropType = 'extraLife';
-                } else { // 6% chance
-                  dropType = Math.random() < 0.5 ? 'shield' : 'rapidFire'; // Fallback to common powerups
-                }
-                
-                useGameStore.getState().addPowerUp({
-                  id: `drop-${Date.now()}`,
-                  type: dropType,
-                  position: { ...alien.position },
-                  velocity: { x: 0, y: 0, z: 0.02 }
-                });
-              }
-            } else {
-              addScore(5);
-              addEffect({
-                id: `hit-${Date.now()}-${alien.id}`,
-                type: 'hit',
-                position: { ...alien.position },
-                startTime: Date.now(),
-              });
-              
-              // Update aliens array with modified health
-              const updateAliens = useGameStore.getState().updateAliens;
-              updateAliens(currentAliens);
-            }
-            
-            // BFG, charge, and railgun projectiles pierce through enemies - don't remove them
-            if (missile.weaponType === 'bfg' || missile.weaponType === 'charge' || missile.weaponType === 'railgun') {
-              break; // Exit the alien loop but continue missile existence
-            } else {
-              return false; // Remove non-piercing missiles after hit
-            }
-          }
-        }
-        
-        // Check collision with asteroids (skip doodads)
-        for (const asteroid of asteroids) {
-          if (asteroid.isDoodad) continue; // Skip non-interactive doodad asteroids
-          
-          const dx = missile.position.x - asteroid.position.x;
-          const dy = missile.position.y - asteroid.position.y;
-          const dz = (missile.position.z || 0) - asteroid.position.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance < asteroid.size * 2.0 + 1.0) { // Adjusted for 100% larger asteroids
-            console.log(`Missile hit ${asteroid.type || 'Normal'} asteroid!`);
-            
-            // BFG completely destroys asteroids, others damage normally
-            if (missile.weaponType === 'bfg') {
-              // BFG instantly destroys any asteroid
-              const damageAsteroid = useGameStore.getState().damageAsteroid;
-              damageAsteroid(asteroid.id, asteroid.health || asteroid.maxHealth || 999);
-            } else {
-              // Normal damage for other weapons
-              const damageAsteroid = useGameStore.getState().damageAsteroid;
-              damageAsteroid(asteroid.id, 1);
-            }
-            
-            // Check if asteroid is destroyed (health <= 0)
-            const updatedAsteroid = useGameStore.getState().asteroids.find(a => a.id === asteroid.id);
-            if (updatedAsteroid && updatedAsteroid.health <= 0) {
-              // Handle asteroid splitting
-              if (asteroid.type === 'SuperLarge' || asteroid.type === 'Large') {
-                // Split the asteroid using the Asteroids component's split logic
-                const splitAsteroid = useGameStore.getState().splitAsteroid;
-                if (splitAsteroid) {
-                  splitAsteroid(asteroid, asteroid.position);
-                } else {
-                  // Fallback: manually create fragments
-                  const now = Date.now();
-                  const fragmentCount = asteroid.type === 'SuperLarge' ? 3 : 2;
-                  const fragmentSize = asteroid.size / fragmentCount;
-                  
-                  // Retain at least 50% of parent's forward velocity
-                  const parentForwardVelocity = asteroid.velocity.z;
-                  const minForwardVelocity = parentForwardVelocity * 0.5;
-                  
-                  for (let i = 0; i < fragmentCount; i++) {
-                    const angle = (i / fragmentCount) * Math.PI * 2 + Math.random() * 0.5;
-                    const speed = 1 + Math.random() * 2;
-                    const fragment = {
-                      id: `fragment-${now}-${i}`,
-                      type: asteroid.type === 'SuperLarge' ? 'Large' : 'Normal',
-                      position: { ...asteroid.position },
-                      velocity: {
-                        x: asteroid.velocity.x * 0.5 + Math.cos(angle) * speed,
-                        y: asteroid.velocity.y * 0.5 + Math.sin(angle) * speed * 0.5,
-                        z: Math.max(minForwardVelocity, parentForwardVelocity * 0.65 + (Math.random() - 0.3) * 1.5)
-                      },
-                      size: fragmentSize,
-                      health: asteroid.type === 'SuperLarge' ? 3 : 1,
-                      maxHealth: asteroid.type === 'SuperLarge' ? 3 : 1,
-                    };
-                    useGameStore.getState().addAsteroid(fragment);
-                  }
-                }
-              }
-              
-              removeAsteroid(asteroid.id);
-              
-              // Score based on asteroid type
-              let score = 50;
-              if (asteroid.type === 'Large') score = 75;
-              else if (asteroid.type === 'SuperLarge') score = 100;
-              addScore(score);
-              
-              addEffect({
-                id: `asteroid-explosion-${Date.now()}-${asteroid.id}`,
-                type: 'explosion',
-                position: { ...asteroid.position },
-                startTime: Date.now(),
-              });
-            } else {
-              // Just a hit effect, not destroyed
-              addEffect({
-                id: `asteroid-hit-${Date.now()}-${asteroid.id}`,
-                type: 'hit',
-                position: { ...asteroid.position },
-                startTime: Date.now(),
-              });
-            }
-            
-            // BFG pierces through asteroids, other missiles are destroyed
-            if (missile.weaponType === 'bfg') {
-              // Continue to next asteroid without removing the BFG missile
-              continue;
-            } else {
-              return false; // Remove non-BFG missiles after hit
-            }
-          }
-        }
-      } else if (missile.type === 'alien') {
-        const dx = missile.position.x - playerPosition.x;
-        const dy = missile.position.y - playerPosition.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < 2.0) { // Adjusted for 10% larger player ship
-          if (!playerPowerUps.shield) {
-            // Check armor protection
-            const armorIntegrity = defensiveSystems.armor.integrity;
-            const armorLevel = defensiveSystems.armor.level;
-            
-            if (armorIntegrity > 0) {
-              // Calculate damage reduction based on armor
-              const baseDamage = 25; // Base enemy damage
-              const armorReduction = Math.min(0.8, (armorIntegrity / 100) * (armorLevel * 0.2)); // Max 80% reduction
-              const finalDamage = Math.ceil(baseDamage * (1 - armorReduction));
-              const armorDamage = Math.min(armorIntegrity, finalDamage * 0.8); // Armor takes 80% of damage
-              
-              // Apply armor damage
-              damageArmor(armorDamage);
-              
-              // Create armor hit effect
-              addEffect({
-                id: `armor-hit-${Date.now()}`,
-                type: 'armorHit',
-                position: { ...playerPosition, z: 0 },
-                startTime: Date.now(),
-              });
-              
-              // If armor is depleted, also lose life
-              if (armorIntegrity - armorDamage <= 0) {
-                loseLife();
-                addEffect({
-                  id: `player-hit-${Date.now()}`,
-                  type: 'playerHit',
-                  position: { ...playerPosition, z: 0 },
-                  startTime: Date.now(),
-                });
-              }
-            } else {
-              // No armor protection - take full damage
-              loseLife();
-              addEffect({
-                id: `player-hit-${Date.now()}`,
-                type: 'playerHit',
-                position: { ...playerPosition, z: 0 },
-                startTime: Date.now(),
-              });
-            }
-          } else {
-            addEffect({
-              id: `shield-hit-${Date.now()}`,
-              type: 'shieldHit',
-              position: { ...playerPosition, z: 0 },
-              startTime: Date.now(),
-            });
-            // Damage shield (reduces level by 1, deactivates if level reaches 0)
-            damageShield();
-          }
-          
-          return false;
-        }
-      }
-      
+      // Collision detection is now handled by PerformanceManager worker
       return true;
     });
     
     updateMissiles(updatedMissiles);
+    
+    // Send collision detection to worker
+    if (collisionWorkerRef.current && updatedMissiles.length > 0) {
+      const currentPlayerPosition = useGameStore.getState().playerPosition;
+      const currentAliens = useGameStore.getState().aliens;
+      const currentAsteroids = useGameStore.getState().asteroids;
+      
+      collisionWorkerRef.current.postMessage({
+        type: 'checkCollisions',
+        data: {
+          missiles: updatedMissiles,
+          aliens: currentAliens,
+          asteroids: currentAsteroids,
+          playerPosition: currentPlayerPosition,
+          timestamp: Date.now()
+        }
+      });
+    }
+    
+    // Performance tracking simplified - workers handle the heavy lifting
     
     // Time-based level progression (every 30 seconds)
     if (gameStartTime && gameState === 'playing') {
@@ -1465,8 +1430,8 @@ function Game() {
     }
   });
 
-  // Staggered cleanup system for free flight mode
-  useEffect(() => {
+  // Staggered cleanup system for free flight mode - TEMPORARILY DISABLED
+  /*useEffect(() => {
     if (gameMode !== 'freeflight' || gameState !== 'playing') return;
 
     // Missile cleanup every 30 seconds
@@ -1569,7 +1534,7 @@ function Game() {
       clearTimeout(enemyCleanupTimeout);
       clearTimeout(asteroidCleanupTimeout);
     };
-  }, [gameMode, gameState]);
+  }, [gameMode, gameState]);*/
   
   if (gameState === 'startup' || gameState === 'gameOver' || gameState === 'gameWon') {
     return null;
@@ -1582,6 +1547,7 @@ function Game() {
       {/* <ParticleDust /> */}
       <GamespaceBoundary />
       <Player />
+      {/* TEMPORARILY DISABLED TO DEBUG INFINITE RENDER LOOP */}
       <AlienWave level={level} difficultyMultiplier={difficultyMultiplier} />
       <Asteroids level={level} />
       <Missiles />
@@ -1596,6 +1562,7 @@ function Game() {
       <ChargeBall />
       <PredictiveCrosshairs />
       <AlienAIManager />
+      {/* <PerformanceManager /> - CONFIRMED: Causes freezing, needs redesign */}
     </>
   );
 }

@@ -16,7 +16,10 @@
       "Bash(timeout 5 npm run start 2 >& 1)",
       "Bash(pkill:*)",
       "Bash(true)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(npm run start:*)",
+      "Bash(npm run lint)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

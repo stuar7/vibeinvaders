@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 import { useGameStore } from '../../store/gameStore';
 // Removed unused GameSpace imports
 import { UnifiedGamespace } from '../../config/UnifiedGamespace';
@@ -235,6 +234,9 @@ function WeaponPowerUp({ powerUp }) {
           break;
         case 'railgunAmmo':
           ammoAmount = 5;
+          break;
+        default:
+          ammoAmount = 50;
           break;
       }
       
