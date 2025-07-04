@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import Alien from './Alien';
 import { useGameStore } from '../store/gameStore';
-// Removed unused GameSpace imports - using UnifiedGamespace instead
+import { useEntityPool } from '../hooks/useEntityPool';
 import { UnifiedGamespace } from '../config/UnifiedGamespace';
 
 function AlienWave({ level, difficultyMultiplier }) {
@@ -14,14 +14,17 @@ function AlienWave({ level, difficultyMultiplier }) {
     lastLoggedBossTime: -1 // For debug logging
   });
   
-  const addAlien = useGameStore((state) => state.addAlien);
   const updateAliens = useGameStore((state) => state.updateAliens);
   const addMissile = useGameStore((state) => state.addMissile);
   const playerPosition = useGameStore((state) => state.playerPosition);
   const playerPowerUps = useGameStore((state) => state.playerPowerUps);
   const gameMode = useGameStore((state) => state.gameMode);
+  const gameState = useGameStore((state) => state.gameState);
   
-  const spawnAlien = () => {
+  // Use Entity Pool for alien management
+  const { spawnAlien } = useEntityPool();
+  
+  const spawnAlienWithPool = () => {
     // Level-based alien spawning
     let alienType = 1; // Default to level 1
     const rand = Math.random();
@@ -74,10 +77,16 @@ function AlienWave({ level, difficultyMultiplier }) {
           y: finalPosition.y, 
           z: -480 // Near front boundary at -500
         };
+        
+        // Calculate velocity direction toward target
+        const deltaZ = finalPosition.z - spawnPosition.z; // -45 - (-480) = +435
+        const speed = (4 + Math.random() * 3) * 1.5 * 1.1 * 1.25 * 1.1;
+        const direction = deltaZ > 0 ? 1 : -1; // Positive if moving toward higher Z
+        
         velocity = {
           x: 0,
           y: 0,
-          z: (4 + Math.random() * 3) * 1.5 * 1.1 * 1.25 * 1.1 // 50% increased + 10% faster + 25% entrance speed + 10% movement speed
+          z: speed * direction // Velocity direction based on target position
         };
         targetPosition = finalPosition;
         break;
@@ -137,19 +146,14 @@ function AlienWave({ level, difficultyMultiplier }) {
         targetPosition = finalPosition;
     }
     
-    
-    const alien = {
-      id: `alien-${Date.now()}-${Math.random()}`,
-      type: alienType,
+    // Use Entity Pool to spawn alien with all necessary data
+    const spawnData = {
       position: spawnPosition,
       velocity: velocity,
-      health: alienType === 5 ? 6 : alienType * 2, // Flying saucer has 6 health
-      maxHealth: alienType === 5 ? 6 : alienType * 2,
-      points: alienType === 1 ? 10 : alienType === 2 ? 15 : alienType === 3 ? 20 : alienType === 5 ? 30 : 20,
       isAtCombatDistance: false,
       isFlying: true,
       isSpawning: true, // New flag for spawn animation
-      isInvulnerable: true, // Invulnerable during spawn
+      isInvulnerable: gameMode !== 'freeflight', // No invulnerability in free flight mode
       spawnType: spawnType,
       targetPosition: targetPosition,
       spawnStartTime: Date.now(),
@@ -161,7 +165,8 @@ function AlienWave({ level, difficultyMultiplier }) {
       // AI behavior state for Web Worker
       behaviorState: 'patrol',
     };
-    addAlien(alien);
+    
+    const newAlien = spawnAlien(alienType, spawnData);
   };
 
   const spawnBoss = () => {
@@ -178,19 +183,13 @@ function AlienWave({ level, difficultyMultiplier }) {
       spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-450, gameMode);
     }
     
-    
-    const boss = {
-      id: `boss-${Date.now()}`,
-      type: 4, // New boss type
+    const bossData = {
       position: spawnPosition,
       velocity: {
         x: (Math.random() - 0.5) * 0.3, // Much reduced sideways drift to prevent boundary exit
         y: (Math.random() - 0.5) * 0.2, // Much reduced vertical drift to prevent boundary exit
         z: 2.2 // Slower approach than normal aliens, but 10% faster
       },
-      health: 50, // Much more health (25x a scout)
-      maxHealth: 50,
-      points: 500, // Big score reward
       isAtCombatDistance: false,
       isFlying: true,
       isBoss: true,
@@ -198,18 +197,23 @@ function AlienWave({ level, difficultyMultiplier }) {
       bfgCooldown: 15000, // 15 seconds between BFG shots
       behaviorState: 'boss_attack' // AI behavior state for Web Worker
     };
-    addAlien(boss);
+    
+    // Spawn boss using entity pool (type 4)
+    spawnAlien(4, bossData);
   };
 
   useFrame((state, delta) => {
+    // Don't spawn aliens if game isn't playing
+    if (gameState !== 'playing') return;
+    
     // Get fresh aliens list each frame
     const currentAliens = useGameStore.getState().aliens || [];
     
     // Boss spawning timer (every 30 seconds for testing)
     spawnRef.current.bossTimer += delta;
     
-    
-    if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval) {
+    // ALGORITHM LIMIT: Check alien count before spawning boss
+    if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval && currentAliens.length < 30) {
       spawnBoss();
       spawnRef.current.bossTimer = 0;
     }
@@ -217,14 +221,23 @@ function AlienWave({ level, difficultyMultiplier }) {
     // Spawn new aliens over time (like asteroids)
     spawnRef.current.spawnTimer += delta;
     
-    if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval) {
+    // ALGORITHM LIMIT: Cap at 30 aliens for this spawning system
+    // This limit only applies to the automatic spawning algorithm, not event-based waves
+    const alienSpawnLimit = 30;
+    const currentAlienCount = currentAliens.length;
+    
+    if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval && currentAlienCount < alienSpawnLimit) {
       // Reduced regular alien spawning (events handle waves now)
-      spawnAlien();
+      spawnAlienWithPool();
       spawnRef.current.spawnTimer = 0;
       spawnRef.current.spawnInterval = Math.max(1.6, (4 - level * 0.13) * 0.8) / 3.0; // 100% increased spawn rate
     }
     
-    if (currentAliens.length === 0) {
+    // Get fresh aliens list after potential spawning
+    const freshAliens = useGameStore.getState().aliens || [];
+    
+    // Don't process if no aliens exist
+    if (freshAliens.length === 0) {
       return;
     }
     
@@ -235,16 +248,17 @@ function AlienWave({ level, difficultyMultiplier }) {
     let timeMultiplier = playerPowerUps.slowTime ? 0.5 : 1.0;
     
     // Apply brake/boost effects to enemy movement (inverse effect)
+    // Reduced impact so enemy missiles don't pause completely
     if (isBraking) {
-      timeMultiplier *= 0.1; // Enemies slow down when player brakes
+      timeMultiplier *= 0.3; // Enemies slow down but not as drastically
     } else if (isBoosting) {
-      timeMultiplier *= 2.0; // Enemies speed up when player boosts
+      timeMultiplier *= 1.5; // Enemies speed up but less dramatically
     }
     
     const adjustedDelta = delta * timeMultiplier * difficultyMultiplier;
     const now = Date.now();
     
-    const updatedAliens = currentAliens.map((alien) => {
+    const updatedAliens = freshAliens.map((alien) => {
       let newX = alien.position.x + alien.velocity.x * adjustedDelta;
       let newY = alien.position.y + alien.velocity.y * adjustedDelta;
       let newZ = alien.position.z + alien.velocity.z * adjustedDelta;
@@ -259,7 +273,7 @@ function AlienWave({ level, difficultyMultiplier }) {
         if (timeSinceSpawn > spawnDuration) {
           // Spawn animation complete
           updatedAlien.isSpawning = false;
-          updatedAlien.isInvulnerable = false;
+          updatedAlien.isInvulnerable = false; // Spawn animation complete, always vulnerable
           
           // Set movement target based on game mode
           let targetX, targetY, targetZ;
@@ -315,7 +329,11 @@ function AlienWave({ level, difficultyMultiplier }) {
       const shouldCheckBounds = timeSinceSpawn > 5000; // 5 seconds grace period
       
       if (!alien.isFlying && !alien.isSpawning && shouldCheckBounds) {
-        const isOutOfBounds = newZ > 50 || newZ < -500 || !UnifiedGamespace.isWithinBounds(newX, newY, gameMode);
+        // Use mode-appropriate Z-axis bounds
+        const zBounds = gameMode === 'freeflight' ? 
+          { front: -10000, back: 10000 } : 
+          { front: -500, back: 50 };
+        const isOutOfBounds = newZ > zBounds.back || newZ < zBounds.front || !UnifiedGamespace.isWithinBounds(newX, newY, gameMode);
         
         if (isOutOfBounds && !alien.isReturningToBounds) {
           // Mark alien as returning to bounds and set target position
@@ -421,7 +439,7 @@ function AlienWave({ level, difficultyMultiplier }) {
             addMissile({
               id: `boss-bfg-${Date.now()}-${alien.id}`,
               position: { ...alien.position },
-              velocity: { x: vx, y: vy, z: 1.0 }, // Faster BFG projectile
+              velocity: { x: vx, y: vy, z: 3.0 }, // Much faster BFG projectile
               type: 'alien',
               weaponType: 'bfg',
               size: 8, // Large BFG projectile
@@ -462,7 +480,7 @@ function AlienWave({ level, difficultyMultiplier }) {
                 addMissile({
                   id: `saucer-charge-${Date.now()}-${alien.id}`,
                   position: { ...alien.position },
-                  velocity: { x: vx, y: vy, z: 0.8 },
+                  velocity: { x: vx, y: vy, z: 2.0 }, // Faster charge projectile
                   type: 'alien',
                   weaponType: 'charge',
                   chargeLevel: alien.chargeLevel,
@@ -495,7 +513,7 @@ function AlienWave({ level, difficultyMultiplier }) {
             addMissile({
               id: `alien-missile-${Date.now()}-${alien.id}`,
               position: { ...alien.position },
-              velocity: { x: vx, y: vy, z: 0.5 }, // Move toward player
+              velocity: { x: vx, y: vy, z: 2.5 }, // Increased velocity - move faster toward player
               type: 'alien',
             });
           }

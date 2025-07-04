@@ -8,6 +8,19 @@
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
+// Non-blocking message-based logging
+const WORKER_DEBUG = true; // Enable debug logging via postMessage
+const workerLog = WORKER_DEBUG ? (message) => {
+  // Low priority, non-blocking log via postMessage
+  self.postMessage({
+    type: 'workerLog',
+    source: 'collisionDetection',
+    level: 'debug',
+    message: message,
+    timestamp: performance.now()
+  });
+} : () => {};
+
 // Simplified BVH collision checking in worker
 class WorkerBVHCollisionSystem {
   constructor() {
@@ -63,29 +76,89 @@ class WorkerBVHCollisionSystem {
     
     const startTime = performance.now();
     
-    // Check each missile
+    // Spatial optimization: Create spatial hash grid to reduce collision checks
+    const gridSize = 20; // 20-unit grid cells
+    const alienGrid = new Map();
+    const asteroidGrid = new Map();
+    
+    // Hash aliens into spatial grid
+    aliens.forEach(alien => {
+      if (alien.isInvulnerable) return;
+      const gridX = Math.floor(alien.position.x / gridSize);
+      const gridY = Math.floor(alien.position.y / gridSize);
+      const gridZ = Math.floor(alien.position.z / gridSize);
+      const key = `${gridX},${gridY},${gridZ}`;
+      
+      if (!alienGrid.has(key)) alienGrid.set(key, []);
+      alienGrid.get(key).push(alien);
+    });
+    
+    // Hash asteroids into spatial grid
+    asteroids.forEach(asteroid => {
+      const gridX = Math.floor(asteroid.position.x / gridSize);
+      const gridY = Math.floor(asteroid.position.y / gridSize);
+      const gridZ = Math.floor(asteroid.position.z / gridSize);
+      const key = `${gridX},${gridY},${gridZ}`;
+      
+      if (!asteroidGrid.has(key)) asteroidGrid.set(key, []);
+      asteroidGrid.get(key).push(asteroid);
+    });
+    
+    // Helper function to get collision radius based on LOD level
+    const getCollisionRadius = (missile, distance) => {
+      if (!['rocket', 'bomb', 'railgun'].includes(missile.weaponType)) {
+        return missile.size || 0.2;
+      }
+      
+      // Adjust collision precision based on distance (LOD concept)
+      if (distance < 50) {
+        return missile.size || 0.2; // Full precision
+      } else if (distance < 150) {
+        return (missile.size || 0.2) * 1.2; // Slightly larger for medium LOD
+      } else {
+        return (missile.size || 0.2) * 1.5; // Even larger for low LOD
+      }
+    };
+    
+    // Check each missile using spatial grid optimization
     missiles.forEach(missile => {
       if (missile.type !== 'player' && missile.type !== 'wingman') return;
       
-      // Check alien collisions
+      // Get missile's grid position
+      const missileGridX = Math.floor(missile.position.x / gridSize);
+      const missileGridY = Math.floor(missile.position.y / gridSize);
+      const missileGridZ = Math.floor((missile.position.z || 0) / gridSize);
+      
+      // Check alien collisions - only check nearby grid cells
       let closestAlien = null;
       let closestAlienDistance = Infinity;
       
-      aliens.forEach(alien => {
-        if (alien.isInvulnerable) return;
-        
-        const dx = missile.position.x - alien.position.x;
-        const dy = missile.position.y - alien.position.y;
-        const dz = (missile.position.z || 0) - alien.position.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        
-        const collisionRadius = (alien.size || 1.5) + (missile.size || 0.2) + 0.3;
-        
-        if (distance < collisionRadius && distance < closestAlienDistance) {
-          closestAlienDistance = distance;
-          closestAlien = alien;
+      // Check 3x3x3 grid around missile (27 cells max instead of all aliens)
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const key = `${missileGridX + dx},${missileGridY + dy},${missileGridZ + dz}`;
+            const nearbyAliens = alienGrid.get(key);
+            
+            if (!nearbyAliens) continue;
+            
+            nearbyAliens.forEach(alien => {
+              const dx = missile.position.x - alien.position.x;
+              const dy = missile.position.y - alien.position.y;
+              const dz = (missile.position.z || 0) - alien.position.z;
+              const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              
+              const missileRadius = getCollisionRadius(missile, distance);
+              const collisionRadius = (alien.size || 1.5) + missileRadius + 0.3;
+              
+              if (distance < collisionRadius && distance < closestAlienDistance) {
+                closestAlienDistance = distance;
+                closestAlien = alien;
+              }
+            });
+          }
         }
-      });
+      }
       
       if (closestAlien) {
         collisions.missileAlienHits.push({
@@ -95,25 +168,38 @@ class WorkerBVHCollisionSystem {
         });
       }
       
-      // Check asteroid collisions
+      // Check asteroid collisions - using same spatial grid optimization
       let closestAsteroid = null;
       let closestAsteroidDistance = Infinity;
       
-      asteroids.forEach(asteroid => {
-        if (asteroid.isDoodad) return;
-        
-        const dx = missile.position.x - asteroid.position.x;
-        const dy = missile.position.y - asteroid.position.y;
-        const dz = (missile.position.z || 0) - asteroid.position.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        
-        const collisionRadius = asteroid.size * 2.0 + 0.8;
-        
-        if (distance < collisionRadius && distance < closestAsteroidDistance) {
-          closestAsteroidDistance = distance;
-          closestAsteroid = asteroid;
+      // Check 3x3x3 grid around missile for asteroids
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const key = `${missileGridX + dx},${missileGridY + dy},${missileGridZ + dz}`;
+            const nearbyAsteroids = asteroidGrid.get(key);
+            
+            if (!nearbyAsteroids) continue;
+            
+            nearbyAsteroids.forEach(asteroid => {
+              if (asteroid.isDoodad) return;
+              
+              const dx = missile.position.x - asteroid.position.x;
+              const dy = missile.position.y - asteroid.position.y;
+              const dz = (missile.position.z || 0) - asteroid.position.z;
+              const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              
+              const missileRadius = getCollisionRadius(missile, distance);
+              const collisionRadius = asteroid.size * 2.0 + missileRadius + 0.8;
+              
+              if (distance < collisionRadius && distance < closestAsteroidDistance) {
+                closestAsteroidDistance = distance;
+                closestAsteroid = asteroid;
+              }
+            });
+          }
         }
-      });
+      }
       
       if (closestAsteroid) {
         collisions.missileAsteroidHits.push({
@@ -144,6 +230,12 @@ class WorkerBVHCollisionSystem {
     });
     
     collisions.processTime = performance.now() - startTime;
+    
+    // Debug logging for performance monitoring
+    if (missiles.length > 20 && collisions.processTime > 5) {
+      workerLog(`[COLLISION OPTIMIZATION] Processed ${missiles.length} missiles vs ${aliens.length} aliens + ${asteroids.length} asteroids in ${collisions.processTime.toFixed(2)}ms using spatial grid`);
+    }
+    
     return collisions;
   }
 

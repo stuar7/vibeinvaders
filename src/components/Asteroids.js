@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../store/gameStore';
-// Removed unused imports - using UnifiedGamespace instead
+import { useEntityPool } from '../hooks/useEntityPool';
 import { UnifiedGamespace } from '../config/UnifiedGamespace';
 
 
@@ -242,16 +242,17 @@ function Asteroids({ level }) {
   });
   
   const asteroids = useGameStore((state) => state.asteroids || []);
-  const addAsteroid = useGameStore((state) => state.addAsteroid);
   const updateAsteroids = useGameStore((state) => state.updateAsteroids);
   const playerPosition = useGameStore((state) => state.playerPosition);
   const aliens = useGameStore((state) => state.aliens);
   const removeAlien = useGameStore((state) => state.removeAlien);
-  const addAlien = useGameStore((state) => state.addAlien);
   const loseLife = useGameStore((state) => state.loseLife);
   const gameMode = useGameStore((state) => state.gameMode);
   
-  const spawnAsteroid = () => {
+  // Use Entity Pool for asteroid management
+  const { spawnAsteroid, spawnAlien, spawnAsteroidField, spawnAlienWave } = useEntityPool();
+  
+  const spawnAsteroidWithPool = () => {
     // Determine asteroid type based on random chance
     const typeRoll = Math.random();
     let asteroidType, size;
@@ -273,17 +274,7 @@ function Asteroids({ level }) {
     // Random speed multiplier between 100% and 300% (increased)
     const speedMultiplier = 1.0 + Math.random() * 2.0;
     
-    // Set health based on asteroid type
-    let health;
-    switch(asteroidType) {
-      case 'SuperLarge': health = 5; break;
-      case 'Large': health = 3; break;
-      case 'Normal': default: health = 1; break;
-    }
-    
-    const asteroid = {
-      id: `asteroid-${Date.now()}-${Math.random()}`,
-      type: asteroidType,
+    const spawnData = {
       position: spawnPosition,
       velocity: {
         x: (Math.random() - 0.5) * 1 * speedMultiplier, // Slight sideways drift
@@ -296,11 +287,11 @@ function Asteroids({ level }) {
         z: Math.random() < 0.3 ? (Math.random() - 0.5) * 0.005 : 0  // 30% chance of slow Z rotation
       },
       size: size,
-      health: health,
-      maxHealth: health,
       spawnStartTime: Date.now(), // Add spawn time for culling exemption
     };
-    addAsteroid(asteroid);
+    
+    // Use entity pool to spawn asteroid
+    spawnAsteroid(asteroidType, spawnData);
   };
   
   const splitAsteroid = (asteroid, position) => {
@@ -317,24 +308,22 @@ function Asteroids({ level }) {
       for (let i = 0; i < 3; i++) {
         const angle = (i / 3) * Math.PI * 2 + Math.random() * 0.5; // Spread in circle + randomness
         const speed = 1 + Math.random() * 2;
-        const fragmentHealth = 3; // Large fragments have 3 health
         fragments.push({
-          id: `fragment-${now}-${i}`,
           type: 'Large',
-          position: { ...position },
-          velocity: {
-            x: asteroid.velocity.x * 0.5 + Math.cos(angle) * speed,
-            y: asteroid.velocity.y * 0.5 + Math.sin(angle) * speed * 0.5,
-            z: Math.max(minForwardVelocity, parentForwardVelocity * 0.7 + (Math.random() - 0.3) * 1.5)
-          },
-          rotation: {
-            x: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0, // 40% chance of very slow rotation
-            y: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0,
-            z: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0
-          },
-          size: fragmentSize,
-          health: fragmentHealth,
-          maxHealth: fragmentHealth,
+          spawnData: {
+            position: { ...position },
+            velocity: {
+              x: asteroid.velocity.x * 0.5 + Math.cos(angle) * speed,
+              y: asteroid.velocity.y * 0.5 + Math.sin(angle) * speed * 0.5,
+              z: Math.max(minForwardVelocity, parentForwardVelocity * 0.7 + (Math.random() - 0.3) * 1.5)
+            },
+            rotation: {
+              x: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0, // 40% chance of very slow rotation
+              y: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0,
+              z: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0
+            },
+            size: fragmentSize
+          }
         });
       }
     } else if (asteroid.type === 'Large') {
@@ -343,87 +332,84 @@ function Asteroids({ level }) {
       for (let i = 0; i < 2; i++) {
         const angle = (i * Math.PI) + (Math.random() - 0.5) * 0.8; // Opposite directions + randomness
         const speed = 1.5 + Math.random() * 2;
-        const fragmentHealth = 1; // Normal fragments have 1 health
         fragments.push({
-          id: `fragment-${now}-${i}`,
           type: 'Normal',
-          position: { ...position },
-          velocity: {
-            x: asteroid.velocity.x * 0.5 + Math.cos(angle) * speed,
-            y: asteroid.velocity.y * 0.5 + Math.sin(angle) * speed * 0.3,
-            z: Math.max(minForwardVelocity, parentForwardVelocity * 0.6 + (Math.random() - 0.2) * 1)
-          },
-          rotation: {
-            x: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0, // 40% chance of very slow rotation
-            y: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0,
-            z: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0
-          },
-          size: fragmentSize,
-          health: fragmentHealth,
-          maxHealth: fragmentHealth,
+          spawnData: {
+            position: { ...position },
+            velocity: {
+              x: asteroid.velocity.x * 0.5 + Math.cos(angle) * speed,
+              y: asteroid.velocity.y * 0.5 + Math.sin(angle) * speed * 0.3,
+              z: Math.max(minForwardVelocity, parentForwardVelocity * 0.6 + (Math.random() - 0.2) * 1)
+            },
+            rotation: {
+              x: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0, // 40% chance of very slow rotation
+              y: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0,
+              z: Math.random() < 0.4 ? (Math.random() - 0.5) * 0.008 : 0
+            },
+            size: fragmentSize
+          }
         });
       }
     }
     
-    // Add all fragments to the asteroid list
-    fragments.forEach(fragment => addAsteroid(fragment));
+    // Add all fragments using entity pool
+    fragments.forEach(fragment => spawnAsteroid(fragment.type, fragment.spawnData));
   };
   
-  const spawnAlienWave = () => {
+  const spawnAlienWaveEvent = () => {
     const waveSize = 3 + Math.floor(level / 2); // 3-6 aliens based on level
     console.log(`🚀 ALIEN WAVE EVENT! Spawning ${waveSize} aliens`);
     
+    const alienSpecs = [];
     for (let i = 0; i < waveSize; i++) {
-      setTimeout(() => {
-        const alienType = Math.random() < 0.2 ? 3 : Math.random() < 0.5 ? 2 : 1;
-        const spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-180 - i * 20, gameMode); // Staggered spawn
-        
-        const alien = {
-          id: `event-alien-${Date.now()}-${i}`,
-          type: alienType,
+      const alienType = Math.random() < 0.2 ? 3 : Math.random() < 0.5 ? 2 : 1;
+      const spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-180 - i * 20, gameMode); // Staggered spawn
+      
+      alienSpecs.push({
+        type: alienType,
+        spawnData: {
           position: spawnPosition,
           velocity: {
             x: (Math.random() - 0.5) * 2,
             y: (Math.random() - 0.5) * 1,
             z: 4 + Math.random() * 3
           },
-          health: alienType * 2,
-          maxHealth: alienType * 2,
-          points: alienType === 1 ? 10 : alienType === 2 ? 15 : 20,
           isAtCombatDistance: false,
           isFlying: true,
-        };
-        addAlien(alien);
-      }, i * 500); // 0.5 second delay between each spawn
+        }
+      });
     }
+    
+    // Use batch spawn from entity pool
+    spawnAlienWave(alienSpecs);
   };
   
-  const spawnAsteroidWave = () => {
+  const spawnAsteroidWaveEvent = () => {
     const waveSize = 2 + Math.floor(level / 3); // 2-4 asteroids based on level
     
+    const asteroidSpecs = [];
     for (let i = 0; i < waveSize; i++) {
-      setTimeout(() => {
-        // Higher chance of large asteroids in events
-        const typeRoll = Math.random();
-        let asteroidType, size;
-        
-        if (typeRoll < 0.3) { // 30% chance for SuperLarge in events
-          asteroidType = 'SuperLarge';
-          size = 8 + Math.random() * 4;
-        } else if (typeRoll < 0.6) { // 30% chance for Large
-          asteroidType = 'Large';
-          size = 5 + Math.random() * 3;
-        } else {
-          asteroidType = 'Normal';
-          size = 1.5 + Math.random() * 3.0;
-        }
-        
-        const spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-400 - i * 30, gameMode); // Staggered spawn further back
-        const speedMultiplier = 1.0 + Math.random() * 2.0;
-        
-        const asteroid = {
-          id: `event-asteroid-${Date.now()}-${i}`,
-          type: asteroidType,
+      // Higher chance of large asteroids in events
+      const typeRoll = Math.random();
+      let asteroidType, size;
+      
+      if (typeRoll < 0.3) { // 30% chance for SuperLarge in events
+        asteroidType = 'SuperLarge';
+        size = 8 + Math.random() * 4;
+      } else if (typeRoll < 0.6) { // 30% chance for Large
+        asteroidType = 'Large';
+        size = 5 + Math.random() * 3;
+      } else {
+        asteroidType = 'Normal';
+        size = 1.5 + Math.random() * 3.0;
+      }
+      
+      const spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-400 - i * 30, gameMode); // Staggered spawn further back
+      const speedMultiplier = 1.0 + Math.random() * 2.0;
+      
+      asteroidSpecs.push({
+        type: asteroidType,
+        spawnData: {
           position: spawnPosition,
           velocity: {
             x: (Math.random() - 0.5) * 1 * speedMultiplier,
@@ -437,10 +423,12 @@ function Asteroids({ level }) {
           },
           size: size,
           spawnStartTime: Date.now(), // Add spawn time for culling exemption
-        };
-        addAsteroid(asteroid);
-      }, i * 800); // 0.8 second delay between each spawn
+        }
+      });
     }
+    
+    // Use batch spawn from entity pool
+    spawnAsteroidField(asteroidSpecs);
   };
   
   const spawnDoodadAsteroid = () => {
@@ -467,9 +455,7 @@ function Asteroids({ level }) {
     // Much deeper Z position - spawn far behind gamespace for background effect
     const spawnZ = -800 + Math.random() * -400; // -800 to -1200 (much deeper background)
     
-    const doodad = {
-      id: `doodad-${Date.now()}-${Math.random()}`,
-      type: 'UltraMassive',
+    const doodadData = {
       position: { x: spawnX, y: spawnY, z: spawnZ },
       velocity: {
         x: velocityX,
@@ -482,12 +468,12 @@ function Asteroids({ level }) {
         z: Math.random() < 0.2 ? (Math.random() - 0.5) * 0.002 : 0
       },
       size: size,
-      health: 0, // Doodads have no health
-      maxHealth: 0,
       isDoodad: true, // Mark as non-interactive
       spawnStartTime: Date.now(), // Add spawn time for culling exemption
     };
-    addAsteroid(doodad);
+    
+    // Spawn using entity pool (UltraMassive type)
+    spawnAsteroid('UltraMassive', doodadData);
   };
   
   useFrame((state, delta) => {
@@ -519,9 +505,9 @@ function Asteroids({ level }) {
       }
       
       if (eventType === 'aliens') {
-        spawnAlienWave();
+        spawnAlienWaveEvent();
       } else {
-        spawnAsteroidWave();
+        spawnAsteroidWaveEvent();
       }
       
       spawnRef.current.lastEventType = eventType;
@@ -533,7 +519,7 @@ function Asteroids({ level }) {
     
     if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval) {
       // Only spawn 1 asteroid at a time now (rare occurrence)
-      spawnAsteroid();
+      spawnAsteroidWithPool();
       spawnRef.current.spawnTimer = 0;
       spawnRef.current.spawnInterval = Math.max(3, 5 - level * 0.3); // Shorter intervals for more frequent spawning
     }
@@ -568,7 +554,7 @@ function Asteroids({ level }) {
       
       const isWayOutside = Math.abs(newX - centerX) > extendedWidth/2 || 
                           Math.abs(newY - centerY) > extendedHeight/2 ||
-                          newZ < 0; // Only cull if negative z
+                          newZ > 50; // Cull if passed behind player
       
       if (isWayOutside) {
         return null;

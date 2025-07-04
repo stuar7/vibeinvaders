@@ -5,6 +5,19 @@
 /* global self */
 /* eslint no-restricted-globals: ["error", "event", "fdescribe"] */
 
+// Non-blocking message-based logging
+const WORKER_DEBUG = true; // Enable debug logging via postMessage
+const workerLog = WORKER_DEBUG ? (message) => {
+  // Low priority, non-blocking log via postMessage
+  self.postMessage({
+    type: 'workerLog',
+    source: 'missilePhysics',
+    level: 'debug',
+    message: message,
+    timestamp: performance.now()
+  });
+} : () => {};
+
 class MissilePhysicsWorker {
   constructor() {
     this.missiles = [];
@@ -37,39 +50,59 @@ class MissilePhysicsWorker {
         return;
       }
       
-      // Handle homing missiles
+      // Handle homing missiles with optimized target selection
       if (missile.type === 'player' && missile.homing && aliens.length > 0) {
         cullStats.homingUpdates++;
+        let aliensChecked = 0;
         
-        // Find closest alien
+        // Optimize: Only search for targets within reasonable homing range (100 units)
+        const maxHomingRange = 100;
+        const maxHomingRangeSquared = maxHomingRange * maxHomingRange;
+        
         let closestAlien = null;
         let closestDistance = Infinity;
+        let targetDx, targetDy, targetDz; // Store for reuse
         
-        aliens.forEach(alien => {
+        // Optimized alien search with early exit and range limiting
+        for (let i = 0; i < aliens.length; i++) {
+          const alien = aliens[i];
+          aliensChecked++;
+          
+          // Calculate direction components once
           const dx = alien.position.x - missile.position.x;
           const dy = alien.position.y - missile.position.y;
           const dz = alien.position.z - missile.position.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
           
-          if (distance < closestDistance) {
-            closestDistance = distance;
+          // Use squared distance for comparison (avoid sqrt until necessary)
+          const distanceSquared = dx * dx + dy * dy + dz * dz;
+          
+          // Skip aliens outside homing range
+          if (distanceSquared > maxHomingRangeSquared) continue;
+          
+          if (distanceSquared < closestDistance * closestDistance) {
+            closestDistance = Math.sqrt(distanceSquared); // Only sqrt when we have a new closest
             closestAlien = alien;
+            // Store direction components for reuse
+            targetDx = dx;
+            targetDy = dy;
+            targetDz = dz;
           }
-        });
+        }
+        
+        // Debug: Track homing optimization effectiveness
+        if (cullStats.homingUpdates % 50 === 0 && aliensChecked > 0) {
+          workerLog(`[HOMING OPTIMIZATION] Missile checked ${aliensChecked}/${aliens.length} aliens (range-limited)`);
+        }
         
         if (closestAlien && closestDistance > 0) {
-          // Calculate homing adjustment
-          const targetDx = closestAlien.position.x - missile.position.x;
-          const targetDy = closestAlien.position.y - missile.position.y;
-          const targetDz = closestAlien.position.z - missile.position.z;
-          const targetDistance = Math.sqrt(targetDx * targetDx + targetDy * targetDy + targetDz * targetDz);
+          // Reuse the already calculated target direction (no second distance calculation!)
           
           const homingStrength = 0.15;
           
-          // Calculate new velocity
-          const targetVelX = targetDx / targetDistance;
-          const targetVelY = targetDy / targetDistance;
-          const targetVelZ = targetDz / targetDistance;
+          // Calculate new velocity using pre-calculated direction (no redundant distance calc!)
+          const targetVelX = targetDx / closestDistance;
+          const targetVelY = targetDy / closestDistance;
+          const targetVelZ = targetDz / closestDistance;
           
           missile.velocity.x += (targetVelX - missile.velocity.x) * homingStrength;
           missile.velocity.y += (targetVelY - missile.velocity.y) * homingStrength;

@@ -8,6 +8,7 @@ function Alien({ alien, isHighlighted = false }) {
   const { type, position, isFlying } = alien;
   const playerPosition = useGameStore((state) => state.playerPosition);
   
+  
   const getAlienColor = () => {
     const baseColor = (() => {
       switch (type) {

@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../store/gameStore';
 
-function Missile({ missile }) {
+// Memoize the missile component to prevent unnecessary re-renders
+const Missile = React.memo(function Missile({ missile }) {
   const meshRef = useRef();
   const { position, type, weaponType = 'default', size = 0.2, color: missileColor, rotation } = missile;
   const showCollisionCircles = useGameStore((state) => state.debug.showCollisionCircles);
@@ -10,6 +11,22 @@ function Missile({ missile }) {
   
   const color = missileColor || (type === 'player' ? '#00ffff' : '#ff0000');
   const projectileSize = size;
+  
+  // Deferred loading state for complex missiles
+  const [isComplexMeshLoaded, setIsComplexMeshLoaded] = useState(false);
+  
+  // Defer complex mesh loading to next frame for rockets, bombs, and railguns
+  useEffect(() => {
+    if (['rocket', 'bomb', 'railgun'].includes(weaponType)) {
+      // Use requestAnimationFrame to defer complex mesh creation
+      const rafId = requestAnimationFrame(() => {
+        setIsComplexMeshLoaded(true);
+      });
+      return () => cancelAnimationFrame(rafId);
+    } else {
+      setIsComplexMeshLoaded(true);
+    }
+  }, [weaponType]);
   
   useFrame(() => {
     if (meshRef.current) {
@@ -62,6 +79,15 @@ function Missile({ missile }) {
         );
       
       case 'rocket':
+        // Show simple placeholder while complex mesh loads
+        if (!isComplexMeshLoaded) {
+          return (
+            <mesh>
+              <sphereGeometry args={[projectileSize, 6, 4]} />
+              <meshBasicMaterial color={color} />
+            </mesh>
+          );
+        }
         return (
           <>
           <mesh>
@@ -102,6 +128,17 @@ function Missile({ missile }) {
       case 'bomb':
         const blinkSpeed = missile.isDeployed ? 4 : 2; // Faster blinking when deployed
         const blinkIntensity = Math.sin(Date.now() * 0.01 * blinkSpeed) * 0.5 + 0.5;
+        
+        // Show simple placeholder while complex mesh loads
+        if (!isComplexMeshLoaded) {
+          return (
+            <mesh>
+              <sphereGeometry args={[projectileSize, 8, 6]} />
+              <meshBasicMaterial color="#ff4400" />
+            </mesh>
+          );
+        }
+        
         return (
           <>
             {/* Main bomb body - spherical */}
@@ -144,6 +181,16 @@ function Missile({ missile }) {
         );
       
       case 'railgun':
+        // Show simple placeholder while complex mesh loads
+        if (!isComplexMeshLoaded) {
+          return (
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.1, 0.1, 4, 6]} />
+              <meshBasicMaterial color="#8800ff" />
+            </mesh>
+          );
+        }
+        
         return (
           <>
             {/* Main rail projectile - elongated cylinder with electromagnetic effect */}
@@ -228,6 +275,16 @@ function Missile({ missile }) {
       )}
     </group>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  // Only re-render if position actually changed significantly
+  const positionThreshold = 0.01;
+  const posDiff = Math.abs(prevProps.missile.position.x - nextProps.missile.position.x) +
+                  Math.abs(prevProps.missile.position.y - nextProps.missile.position.y) +
+                  Math.abs(prevProps.missile.position.z - nextProps.missile.position.z);
+  
+  // Re-render if position changed significantly or if it's a different missile
+  return prevProps.missile.id === nextProps.missile.id && posDiff < positionThreshold;
+});
 
 export default Missile;

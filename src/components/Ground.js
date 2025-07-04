@@ -69,7 +69,6 @@ function Ground({
     // Compute BVH for each geometry for efficient collision detection
     Object.values(geometries).forEach(geometry => {
       geometry.computeBoundsTree({
-        strategy: 'SAH', // Surface Area Heuristic - best quality
         maxLeafTris: 8
       });
     });
@@ -115,7 +114,8 @@ function Ground({
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     
     // Distribute asteroids along the curved path
-    const points = asteroidPath.getSpacedPoints(asteroidCount);
+    // getSpacedPoints returns count + 1 points (includes both start and end)
+    const points = asteroidPath.getSpacedPoints(asteroidCount - 1);
     const asteroids = [];
     
     points.forEach((point, index) => {

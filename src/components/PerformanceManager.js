@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../store/gameStore';
+import workerLogProcessor from '../utils/WorkerLogProcessor';
 
 function PerformanceManager() {
   const collisionWorkerRef = useRef(null);
@@ -54,6 +55,12 @@ function PerformanceManager() {
       collisionWorkerRef.current.onmessage = (e) => {
         const { type, collisions, hits, timestamp } = e.data;
         
+        // Handle worker log messages with low priority processing
+        if (type === 'workerLog') {
+          workerLogProcessor.addLog(e.data);
+          return;
+        }
+        
         if (type === 'collisionResults') {
           pendingCollisionsRef.current.set(timestamp, collisions);
         } else if (type === 'explosionResults') {
@@ -68,6 +75,12 @@ function PerformanceManager() {
       physicsWorkerRef.current.onmessage = (e) => {
         const { type, results, timestamp } = e.data;
         
+        // Handle worker log messages with low priority processing
+        if (type === 'workerLog') {
+          workerLogProcessor.addLog(e.data);
+          return;
+        }
+        
         if (type === 'physicsResults') {
           pendingPhysicsRef.current.set(timestamp, results);
         }
@@ -78,6 +91,12 @@ function PerformanceManager() {
       
       creationWorkerRef.current.onmessage = (e) => {
         const { type, results, timestamp } = e.data;
+        
+        // Handle worker log messages with low priority processing
+        if (type === 'workerLog') {
+          workerLogProcessor.addLog(e.data);
+          return;
+        }
         
         if (type === 'missilesCreated') {
           pendingCreationsRef.current.set(timestamp, results);
@@ -289,6 +308,7 @@ function PerformanceManager() {
             position: { ...a.position },
             size: a.size
           })),
+          playerPosition: useGameStore.getState().playerPosition,
           timestamp: now
         }
       });

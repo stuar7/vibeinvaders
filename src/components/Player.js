@@ -285,7 +285,7 @@ function Player() {
           />
         </mesh>
         
-        {/* LEFT_WING: Triangle extending left from fuselage */}
+        {/* LEFT_WING: Flat wing extending left from fuselage, inline with main body at back */}
         <mesh position={[-0.3, 0, 0]} name="leftWing" renderOrder={10}>
           <bufferGeometry>
             <bufferAttribute
@@ -293,7 +293,7 @@ function Player() {
               count={3}
               array={new Float32Array([
                 0, 0, -0.8,
-                -1.5, 0, 0.5,
+                -1.5, 0, 0.0,
                 0, 0, 0.8
               ])}
               itemSize={3}
@@ -307,7 +307,7 @@ function Player() {
           />
         </mesh>
         
-        {/* RIGHT_WING: Triangle extending right from fuselage */}
+        {/* RIGHT_WING: Flat wing extending right from fuselage, inline with main body at back */}
         <mesh position={[0.3, 0, 0]} name="rightWing" renderOrder={10}>
           <bufferGeometry>
             <bufferAttribute
@@ -315,7 +315,7 @@ function Player() {
               count={3}
               array={new Float32Array([
                 0, 0, -0.8,
-                1.5, 0, 0.5,
+                1.5, 0, 0.0,
                 0, 0, 0.8
               ])}
               itemSize={3}
@@ -694,8 +694,8 @@ function Player() {
         
         // Create wing trail effects
         if (doubleTapState.rollProgress < 1.0) {
-          const wingTipLeft = new THREE.Vector3(-2.0, 0, 0);
-          const wingTipRight = new THREE.Vector3(2.0, 0, 0);
+          const wingTipLeft = new THREE.Vector3(-1.8, 0, 0);
+          const wingTipRight = new THREE.Vector3(1.8, 0, 0);
           
           // Transform wing tips to world space
           wingTipLeft.applyMatrix4(meshRef.current.matrixWorld);

@@ -19,7 +19,9 @@
       "Bash(cp:*)",
       "Bash(npm run start:*)",
       "Bash(npm run lint)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(cat:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

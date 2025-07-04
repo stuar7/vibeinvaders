@@ -5,6 +5,7 @@ import UI from './components/UI';
 import FollowCamera from './components/FollowCamera';
 import CursorZoomOverlay from './components/CursorZoomOverlay';
 import MainMenu from './components/MainMenu';
+import LoadingScreen from './components/LoadingScreen';
 import { useGameStore } from './store/gameStore';
 
 // Dynamic fog component that follows player position
@@ -42,32 +43,37 @@ function App() {
   // Show game
   return (
     <>
-      <Canvas
-        gl={{ antialias: true, alpha: false }}
-        style={{ background: '#000' }}
-      >
-        <FollowCamera />
-        
-        <ambientLight intensity={0.5} />
-        <pointLight position={[0, 50, 50]} intensity={1} />
-        
-        {/* Mild directional light from top left */}
-        <directionalLight 
-          position={[-30, 40, 20]} 
-          intensity={0.3} 
-          color="#ffffff"
-        />
-        
-        <fog attach="fog" args={['#404040', 175, 850]} />
-        <DynamicFog />
-        
-        <Suspense fallback={null}>
-          <Game />
-        </Suspense>
-      </Canvas>
-      
-      <UI />
-      {/* <CursorZoomOverlay /> */}
+      {gameState === 'loading' && <LoadingScreen />}
+      {gameState !== 'loading' && (
+        <>
+          <Canvas
+            gl={{ antialias: true, alpha: false }}
+            style={{ background: '#000' }}
+          >
+            <FollowCamera />
+            
+            <ambientLight intensity={0.5} />
+            <pointLight position={[0, 50, 50]} intensity={1} />
+            
+            {/* Mild directional light from top left */}
+            <directionalLight 
+              position={[-30, 40, 20]} 
+              intensity={0.3} 
+              color="#ffffff"
+            />
+            
+            <fog attach="fog" args={['#404040', 175, 850]} />
+            <DynamicFog />
+            
+            <Suspense fallback={null}>
+              <Game />
+            </Suspense>
+          </Canvas>
+          
+          <UI />
+          {/* <CursorZoomOverlay /> */}
+        </>
+      )}
     </>
   );
 }

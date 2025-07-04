@@ -271,6 +271,154 @@ function UI() {
                   Entities: A:{aliens.length} M:<span style={{ color: missiles.length > 20 ? '#ff6600' : missiles.length > 10 ? '#ffaa00' : '#00ff00' }}>{missiles.length}</span> As:{asteroids.length}
                 </div>
 
+                {performance.poolStats && (
+                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
+                    <strong>Weapon Pool Usage:</strong><br/>
+                    {Object.entries(performance.poolStats).map(([weaponType, stats]) => (
+                      <div key={weaponType} style={{ fontSize: '10px', marginBottom: '2px' }}>
+                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '50px', display: 'inline-block' }}>
+                          {weaponType}:
+                        </span>
+                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
+                          {stats.active}/{stats.poolSize}
+                        </span>
+                        <span style={{ color: '#888', marginLeft: '8px' }}>
+                          ({stats.utilizationRate})
+                        </span>
+                        {stats.active > stats.poolSize * 0.8 && (
+                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {performance.effectsPoolStats && (
+                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
+                    <strong>Effects Pool Usage:</strong><br/>
+                    {Object.entries(performance.effectsPoolStats).map(([effectType, stats]) => (
+                      <div key={effectType} style={{ fontSize: '10px', marginBottom: '2px' }}>
+                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '70px', display: 'inline-block' }}>
+                          {effectType}:
+                        </span>
+                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
+                          {stats.active}/{stats.poolSize}
+                        </span>
+                        <span style={{ color: '#888', marginLeft: '8px' }}>
+                          ({stats.utilizationRate})
+                        </span>
+                        {stats.active > stats.poolSize * 0.8 && (
+                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {performance.cleanupWorkerStats && (
+                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
+                    <strong>Cleanup Worker:</strong><br/>
+                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
+                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
+                        Tracking:
+                      </span>
+                      <span style={{ color: performance.cleanupWorkerStats.totalMissiles > 50 ? '#ff6600' : '#00ff00' }}>
+                        {performance.cleanupWorkerStats.totalMissiles} missiles
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
+                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
+                        Avg Age:
+                      </span>
+                      <span style={{ color: performance.cleanupWorkerStats.averageAge > 15 ? '#ff6600' : '#888' }}>
+                        {performance.cleanupWorkerStats.averageAge}s
+                      </span>
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        (oldest: {performance.cleanupWorkerStats.oldestAge}s)
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
+                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
+                        Status:
+                      </span>
+                      <span style={{ color: performance.cleanupWorkerStats.isRunning ? '#00ff00' : '#ff0000' }}>
+                        {performance.cleanupWorkerStats.isRunning ? 'Running' : 'Stopped'}
+                      </span>
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        (next: {performance.cleanupWorkerStats.nextCleanupIn}s)
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {performance.entityPoolStats && (
+                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
+                    <strong>Entity Pool Usage:</strong><br/>
+                    {Object.entries(performance.entityPoolStats)
+                      .filter(([entityType]) => entityType.startsWith('alien_') || entityType.startsWith('asteroid_'))
+                      .map(([entityType, stats]) => (
+                      <div key={entityType} style={{ fontSize: '10px', marginBottom: '2px' }}>
+                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '80px', display: 'inline-block' }}>
+                          {entityType.replace('_', ' ')}:
+                        </span>
+                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
+                          {stats.active}/{stats.poolSize}
+                        </span>
+                        <span style={{ color: '#888', marginLeft: '8px' }}>
+                          ({stats.utilizationRate})
+                        </span>
+                        {stats.active > stats.poolSize * 0.8 && (
+                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {performance.triangleBreakdown && performance.triangleCount > 50000 && (
+                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
+                    <strong>Triangle Breakdown ({performance.triangleCount.toLocaleString()}):</strong><br/>
+                    <div style={{ fontSize: '9px', marginBottom: '4px' }}>
+                      <strong>By Component:</strong>
+                    </div>
+                    {Object.entries(performance.triangleBreakdown.byComponent)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([component, count]) => (
+                        <div key={component} style={{ fontSize: '9px', marginBottom: '1px' }}>
+                          <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
+                            {component}:
+                          </span>
+                          <span style={{ color: count > 10000 ? '#ff6600' : count > 5000 ? '#ffaa00' : '#00ff00' }}>
+                            {count.toLocaleString()}
+                          </span>
+                          <span style={{ color: '#888', marginLeft: '4px' }}>
+                            ({((count / performance.triangleCount) * 100).toFixed(1)}%)
+                          </span>
+                        </div>
+                      ))}
+                    {performance.triangleBreakdown.topContributors.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '9px', marginTop: '4px', marginBottom: '2px' }}>
+                          <strong>Top Contributors:</strong>
+                        </div>
+                        {performance.triangleBreakdown.topContributors.slice(0, 3).map((contributor, i) => (
+                          <div key={i} style={{ fontSize: '9px', marginBottom: '1px' }}>
+                            <span style={{ color: '#aaa', width: '60px', display: 'inline-block' }}>
+                              {contributor.name}:
+                            </span>
+                            <span style={{ color: contributor.triangles > 5000 ? '#ff6600' : '#ffaa00' }}>
+                              {contributor.triangles.toLocaleString()}
+                            </span>
+                            <span style={{ color: '#888', marginLeft: '4px', fontSize: '8px' }}>
+                              {contributor.type}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
                   <strong>Performance Bottlenecks:</strong><br/>
                   {performance.frameRate < 30 && <div style={{ color: '#ff0000' }}>⚠ Low FPS detected</div>}
@@ -294,6 +442,14 @@ function UI() {
                           Triangles: {spike.triangleCount.toLocaleString()} | 
                           Calls: {spike.drawCalls}
                         </div>
+                        {spike.poolStats && (
+                          <div style={{ color: '#888', fontSize: '8px' }}>
+                            Pool: R:{spike.poolStats.rocket?.active || 0}/{spike.poolStats.rocket?.poolSize || 0} | 
+                            B:{spike.poolStats.bfg?.active || 0}/{spike.poolStats.bfg?.poolSize || 0} | 
+                            💣:{spike.poolStats.bomb?.active || 0}/{spike.poolStats.bomb?.poolSize || 0} | 
+                            ⚡:{spike.poolStats.railgun?.active || 0}/{spike.poolStats.railgun?.poolSize || 0}
+                          </div>
+                        )}
                         <div style={{ color: '#ccc', fontSize: '9px' }}>
                           {spike.cause}
                         </div>

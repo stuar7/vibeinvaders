@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import weaponMeshPool from '../systems/WeaponMeshPool2';
+import entityPool from '../systems/EntityPool';
 
 const initialState = {
   gameState: 'startup',
@@ -113,7 +115,10 @@ const initialState = {
     spikes: [],
     gcEvents: 0,
     lastGCTime: 0,
-  }
+  },
+  
+  // Async asset loading
+  asyncAssetsLoaded: false
 };
 
 export const useGameStore = create((set, get) => ({
@@ -125,7 +130,11 @@ export const useGameStore = create((set, get) => ({
   setShowMenu: (showMenu) => set({ showMenu }),
   setGameMode: (gameMode) => {
     console.log(`[STORE] Setting game mode to: ${gameMode}`);
-    set({ gameMode });
+    set({ 
+      gameMode,
+      // Enable freeLookMode by default when starting free flight mode
+      freeLookMode: gameMode === 'freeflight' ? true : false
+    });
   },
   returnToMenu: () => set({ 
     showMenu: true, 
@@ -180,6 +189,8 @@ export const useGameStore = create((set, get) => ({
     elapsedTime: state.gameStartTime ? Date.now() - state.gameStartTime : 0
   })),
 
+  setAsyncAssetsLoaded: (loaded) => set({ asyncAssetsLoaded: loaded }),
+
   movePlayer: (deltaX, deltaY = 0, deltaZ = 0) => set((state) => {
     const currentPosition = state.playerPosition;
     const newPosition = {
@@ -209,6 +220,15 @@ export const useGameStore = create((set, get) => ({
     // FIFO culling: Remove oldest missiles when exceeding 100 entities
     if (newMissiles.length > 100) {
       const excessCount = newMissiles.length - 100;
+      const culledMissiles = newMissiles.slice(0, excessCount); // Get missiles being removed
+      
+      // Release culled missiles from weapon pool
+      culledMissiles.forEach(missile => {
+        if (['rocket', 'bfg', 'bomb', 'railgun'].includes(missile.weaponType)) {
+          weaponMeshPool.release(missile.id);
+        }
+      });
+      
       console.log(`[MISSILE CULLING] Removing ${excessCount} oldest missiles (FIFO), keeping newest 100`);
       newMissiles = newMissiles.slice(excessCount); // Remove from beginning (oldest first)
     }
@@ -224,6 +244,15 @@ export const useGameStore = create((set, get) => ({
     if (newMissiles.length > 100) {
       const excessCount = newMissiles.length - 100;
       if (excessCount > 0) {
+        const culledMissiles = newMissiles.slice(0, excessCount); // Get missiles being removed
+        
+        // Release culled missiles from weapon pool
+        culledMissiles.forEach(missile => {
+          if (['rocket', 'bfg', 'bomb', 'railgun'].includes(missile.weaponType)) {
+            weaponMeshPool.release(missile.id);
+          }
+        });
+        
         console.log(`[MISSILE CULLING] Removing ${excessCount} oldest missiles (FIFO), keeping newest 100`);
         newMissiles = newMissiles.slice(excessCount);
       }
@@ -232,9 +261,17 @@ export const useGameStore = create((set, get) => ({
     return { missiles: newMissiles };
   }),
   
-  removeMissile: (id) => set((state) => ({
-    missiles: state.missiles.filter((missile) => missile.id !== id),
-  })),
+  removeMissile: (id) => set((state) => {
+    // Release missile from weapon pool if it's using a pooled mesh
+    const missile = state.missiles.find(m => m.id === id);
+    if (missile && ['rocket', 'bfg', 'bomb', 'railgun'].includes(missile.weaponType)) {
+      weaponMeshPool.release(id);
+    }
+    
+    return {
+      missiles: state.missiles.filter((missile) => missile.id !== id),
+    };
+  }),
   
   updateMissiles: (missiles) => set({ missiles }),
   
@@ -379,6 +416,17 @@ export const useGameStore = create((set, get) => ({
     freeLookMode: !state.freeLookMode
   })),
 
+  // Toggle cursor control without changing game mode
+  toggleCursorControl: () => set((state) => {
+    if (state.gameMode === 'freeflight') {
+      // In free flight mode, F key toggles pointer lock on/off
+      return { freeLookMode: !state.freeLookMode };
+    } else {
+      // In campaign mode, F key toggles cursor aiming
+      return { cursorAiming: !state.cursorAiming };
+    }
+  }),
+
   setBraking: (isBraking) => set({ isBraking }),
   setBoosting: (isBoosting) => set({ isBoosting }),
   setShiftBoosting: (isShiftBoosting) => set({ isShiftBoosting }),
@@ -427,6 +475,13 @@ export const useGameStore = create((set, get) => ({
   
   resetGame: () => {
     const currentState = get();
+    
+    // Clear weapon pool when resetting game
+    weaponMeshPool.clearAllActiveMissiles();
+    
+    // Clear entity pool when resetting game
+    entityPool.clearAllActiveEntities();
+    
     set({
       ...initialState,
       gameMode: currentState.gameMode, // Preserve the selected game mode
@@ -527,10 +582,17 @@ export const useGameStore = create((set, get) => ({
   startGame: (difficulty = 'normal') => {
     const currentState = get();
     console.log(`[STORE] Starting game with mode: ${currentState.gameMode}`);
+    
+    // Clear weapon pool when starting new game
+    weaponMeshPool.clearAllActiveMissiles();
+    
+    // Clear entity pool when starting new game
+    entityPool.clearAllActiveEntities();
+    
     set({
       ...initialState,
       showMenu: false,
-      gameState: 'playing',
+      gameState: 'loading', // Start in loading state
       difficulty,
       gameMode: currentState.gameMode, // Preserve the selected game mode
       highScore: currentState.highScore,
@@ -544,6 +606,11 @@ export const useGameStore = create((set, get) => ({
       elapsedTime: 0,
     });
   },
+
+  setGameReady: () => set((state) => ({
+    gameState: state.gameState === 'loading' ? 'playing' : state.gameState,
+    gameStartTime: Date.now(), // Reset start time when actually starting
+  })),
 
   // Battery management for energy weapons
   drainBattery: (amount = 1) => set((state) => ({

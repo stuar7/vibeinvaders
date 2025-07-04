@@ -43,17 +43,29 @@ function FollowCamera() {
         cameraState.freelookOffset.y *= 0.9;
       }
       
-      // Dynamic FOV based on forward velocity (when flying forward/partially forward)
+      // Dynamic FOV based on forward movement speed (decrease 1 FOV per 1 unit forward speed)
       const baseFOV = 80;
-      const maxFOVReduction = 5;
       
-      // Calculate forward velocity component (Z-axis is forward direction when negative)
-      const forwardVelocity = Math.abs(playerVelocity.z); // Use absolute value since forward is negative Z
-      const maxForwardVelocity = 15; // Estimate of max forward speed based on new settings
+      // Calculate forward movement component using dot product with look direction
+      let forwardSpeed = 0;
+      if (freeLookMode && playerRotation) {
+        // In freeflight mode, use ship's look direction
+        const lookDirection = new THREE.Vector3(0, 0, -1); // Ship points in negative Z
+        const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(playerRotation.x, playerRotation.y, playerRotation.z)
+        );
+        lookDirection.applyMatrix4(rotationMatrix);
+        
+        // Calculate dot product of velocity and look direction
+        const velocityVector = new THREE.Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
+        forwardSpeed = Math.max(0, velocityVector.dot(lookDirection)); // Only positive (forward) movement
+      } else {
+        // In normal mode, forward is negative Z direction
+        forwardSpeed = Math.max(0, -playerVelocity.z); // Forward is negative Z, so negate and clamp to positive
+      }
       
-      // Linear reduction: 0 velocity = no reduction, max velocity = max reduction
-      const velocityRatio = Math.min(forwardVelocity / maxForwardVelocity, 1.0);
-      const fovReduction = velocityRatio * maxFOVReduction;
+      // Apply 1:1 ratio: 1 FOV reduction per 1 unit of forward speed
+      const fovReduction = forwardSpeed;
       let dynamicFOV = baseFOV - fovReduction;
       
       // Apply zoom if active (override dynamic FOV when zoomed)
