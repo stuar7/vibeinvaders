@@ -25,18 +25,15 @@ export const useQueueProcessor = ({
         const newMissiles = queuedMissiles.map(item => {
           // Handle both formats: direct missile objects and wrapped objects
           if (item.type === 'add' && item.missile) {
-            console.log('[QUEUE] Processing wrapped missile:', item.missile);
             return item.missile;
           } else if (item.id && item.position && item.velocity) {
             // Direct missile object (charge weapons)
-            console.log('[QUEUE] Processing direct missile:', item);
             return item;
           }
           console.warn('[QUEUE] Unknown missile format:', item);
           return null;
         }).filter(Boolean);
         
-        console.log('[QUEUE] Adding', newMissiles.length, 'missiles to store');
         const updatedMissiles = [...currentMissiles, ...newMissiles];
         updateMissiles(updatedMissiles);
       }

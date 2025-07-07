@@ -10,18 +10,24 @@ import { useGameStore } from './store/gameStore';
 
 // Dynamic fog component that follows player position
 function DynamicFog() {
-  const { scene } = useThree();
+  const { scene, camera } = useThree();
   const playerPosition = useGameStore((state) => state.playerPosition);
   
   useFrame(() => {
-    if (scene.fog && playerPosition) {
-      // Keep the same relative distances (175 near, 850 far) but make them relative to player position
-      const baseNear = 175;
-      const baseFar = 850;
+    if (scene.fog) {
+      // Fog should always be relative to camera/player position
+      // These are the desired fog distances from the player
+      const fogNear = 175;
+      const fogFar = 850;
       
-      // Adjust fog distances based on player's Z position
-      scene.fog.near = baseNear + (playerPosition.z || 0);
-      scene.fog.far = baseFar + (playerPosition.z || 0);
+      // In three.js, fog is calculated from the camera position
+      // Since the camera follows the player, we just need to set constant distances
+      scene.fog.near = fogNear;
+      scene.fog.far = fogFar;
+      
+      // Note: Three.js fog automatically works relative to the camera position,
+      // so we don't need to manually offset it. The fog will naturally follow
+      // as the camera moves with the player.
     }
   });
   

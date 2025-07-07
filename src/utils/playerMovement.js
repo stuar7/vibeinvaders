@@ -19,8 +19,14 @@ export const processPlayerMovement = ({
   
   // Star Fox 64-style momentum-based movement
   
-  // Get free look mode for 6DOF controls
+  // Get free look mode and UI interaction mode for 6DOF controls
   const freeLookMode = useGameStore.getState().freeLookMode;
+  const uiInteractionMode = useGameStore.getState().uiInteractionMode;
+  
+  // Skip all movement processing if in UI interaction mode
+  if (uiInteractionMode) {
+    return;
+  }
   
   // Star Citizen-style movement parameters
   const baseAcceleration = freeLookMode ? 12 : 18; // Much lower acceleration for gradual buildup

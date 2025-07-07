@@ -230,7 +230,7 @@ function Asteroid({ asteroid }) {
   );
 }
 
-function Asteroids({ level }) {
+function Asteroids({ level = 1 }) {
   const spawnRef = useRef({ 
     spawnTimer: 0, 
     spawnInterval: 5, // Faster testing - 5 seconds between asteroid spawns
@@ -248,6 +248,7 @@ function Asteroids({ level }) {
   const removeAlien = useGameStore((state) => state.removeAlien);
   const loseLife = useGameStore((state) => state.loseLife);
   const gameMode = useGameStore((state) => state.gameMode);
+  const gameState = useGameStore((state) => state.gameState);
   
   // Use Entity Pool for asteroid management
   const { spawnAsteroid, spawnAlien, spawnAsteroidField, spawnAlienWave } = useEntityPool();
@@ -289,6 +290,8 @@ function Asteroids({ level }) {
       size: size,
       spawnStartTime: Date.now(), // Add spawn time for culling exemption
     };
+    
+    console.log(`[ASTEROIDS] Spawning ${asteroidType} asteroid at position:`, spawnPosition);
     
     // Use entity pool to spawn asteroid
     spawnAsteroid(asteroidType, spawnData);
@@ -477,13 +480,17 @@ function Asteroids({ level }) {
   };
   
   useFrame((state, delta) => {
+    // Don't spawn asteroids if game isn't playing
+    if (gameState !== 'playing') return;
+    
     // Get fresh asteroids list
     const currentAsteroids = useGameStore.getState().asteroids || [];
     
     // Ultra Massive Doodad Timer (every 45-90 seconds)
     spawnRef.current.doodadTimer += delta;
     
-    if (spawnRef.current.doodadTimer >= spawnRef.current.doodadInterval) {
+    // ALGORITHM LIMIT: Don't spawn doodads if at or above limit (they count towards the total)
+    if (spawnRef.current.doodadTimer >= spawnRef.current.doodadInterval && currentAsteroids.length < 30) {
       spawnDoodadAsteroid();
       spawnRef.current.doodadTimer = 0;
       spawnRef.current.doodadInterval = 45 + Math.random() * 45; // Reset to new random interval
@@ -514,11 +521,17 @@ function Asteroids({ level }) {
       spawnRef.current.eventTimer = 0;
     }
     
-    // Regular asteroid spawning (much rarer now)
+    // Regular asteroid spawning
     spawnRef.current.spawnTimer += delta;
     
-    if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval) {
-      // Only spawn 1 asteroid at a time now (rare occurrence)
+    // ALGORITHM LIMIT: Cap at 30 asteroids for this spawning system
+    // This limit only applies to the automatic spawning algorithm, not event-based waves
+    const asteroidSpawnLimit = 30;
+    const currentAsteroidCount = currentAsteroids.length;
+    
+    if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval && currentAsteroidCount < asteroidSpawnLimit) {
+      console.log(`[ASTEROIDS] Spawn timer triggered: ${currentAsteroidCount}/${asteroidSpawnLimit} asteroids`);
+      // Only spawn 1 asteroid at a time
       spawnAsteroidWithPool();
       spawnRef.current.spawnTimer = 0;
       spawnRef.current.spawnInterval = Math.max(3, 5 - level * 0.3); // Shorter intervals for more frequent spawning

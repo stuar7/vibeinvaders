@@ -31,7 +31,8 @@ class EffectsPool {
     const startTime = performance.now();
     
     // Pre-build shared geometry (single plane for all particles)
-    this.geometryCache.set('particle', new THREE.PlaneGeometry(0.3, 0.3));
+    // Reduced by 25% from 0.3 to 0.225
+    this.geometryCache.set('particle', new THREE.PlaneGeometry(0.225, 0.225));
     
     // Pre-build materials for different effect types
     this.materialCache.set('explosion', new THREE.MeshBasicMaterial({ 

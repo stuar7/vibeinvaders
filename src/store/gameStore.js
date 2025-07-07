@@ -86,6 +86,8 @@ const initialState = {
   useWebWorkerAI: true, // Toggle Web Worker AI vs traditional AI
   cursorAiming: false,
   freeLookMode: false,
+  firstPersonMode: false, // Cockpit view for perfect auto-fire alignment
+  uiInteractionMode: false, // Pause flight controls for UI interaction (F key in free flight)
   highlightedAlienId: null,
   virtualJoystick: { x: 0, y: 0 }, // For free flight mode mouse position display
   
@@ -99,6 +101,54 @@ const initialState = {
   // Zoom state
   isZoomed: false, // Z key zoom toggle
   zoomFOV: 50, // Target FOV when zoomed
+  
+  // Advanced targeting state  
+  targetingEnabled: false,
+  targetingMode: 'blue', // 'blue', 'yellow', 'cyan' - Blue is default
+  selectedTarget: null,
+  targetLock: false,
+  targetPrediction: null, // Prediction data for UI display
+  
+  // Hit indicator for crosshair
+  hitIndicator: {
+    active: false,
+    timestamp: 0
+  },
+  
+  // Targeting validation results
+  validationResults: null,
+  
+  // Live targeting statistics
+  liveTargetingStats: {
+    enabled: false,
+    currentTarget: null,
+    shotHistory: [], // Array of {timestamp, targetName, distance, hit, closestDistance, targetId}
+    sessionStats: {
+      shots: 0,
+      hits: 0,
+      totalDistance: 0,
+      avgDistance: 0,
+      totalClosestDistance: 0,
+      avgClosestDistance: 0
+    }
+  },
+  
+  // Auto-fire targeting system
+  autoFireTargeting: {
+    enabled: false,
+    alignmentThreshold: 2.0, // Distance threshold for crosshair alignment (in world units) - increased for easier alignment
+    fireDelay: 0.1, // Delay between auto-fire shots in seconds
+    lastFireTime: 0,
+    alignmentHistory: [], // Track alignment over time for stability
+    stabilityRequired: 3, // Number of consecutive aligned frames before firing
+    // Debug information
+    debug: {
+      currentAlignment: 0,
+      isAligned: false,
+      alignmentProgress: 0,
+      stabilityProgress: 0
+    }
+  },
   
   // Performance monitoring
   performance: {
@@ -416,11 +466,36 @@ export const useGameStore = create((set, get) => ({
     freeLookMode: !state.freeLookMode
   })),
 
+  toggleFirstPersonMode: () => set((state) => ({
+    firstPersonMode: !state.firstPersonMode
+  })),
+
+  // UI Position Management
+  resetUIPositions: () => {
+    try {
+      const uiPositionManager = require('../utils/uiPositions').default;
+      uiPositionManager.resetPositions();
+      // Trigger UI update
+      window.dispatchEvent(new CustomEvent('ui-positions-reset'));
+    } catch (error) {
+      console.warn('Failed to reset UI positions:', error);
+    }
+  },
+
   // Toggle cursor control without changing game mode
   toggleCursorControl: () => set((state) => {
     if (state.gameMode === 'freeflight') {
-      // In free flight mode, F key toggles pointer lock on/off
-      return { freeLookMode: !state.freeLookMode };
+      // In free flight mode, F key toggles UI interaction mode
+      // This releases pointer lock and pauses flight controls
+      const newUiMode = !state.uiInteractionMode;
+      if (newUiMode) {
+        // Release pointer lock when entering UI mode
+        if (document.exitPointerLock) {
+          document.exitPointerLock();
+        }
+        document.body.style.cursor = 'auto';
+      }
+      return { uiInteractionMode: newUiMode };
     } else {
       // In campaign mode, F key toggles cursor aiming
       return { cursorAiming: !state.cursorAiming };
@@ -485,6 +560,7 @@ export const useGameStore = create((set, get) => ({
     set({
       ...initialState,
       gameMode: currentState.gameMode, // Preserve the selected game mode
+      freeLookMode: currentState.freeLookMode, // Preserve free look mode
       highScore: currentState.highScore,
       chargeWeapon: {
         isCharging: false,
@@ -595,6 +671,7 @@ export const useGameStore = create((set, get) => ({
       gameState: 'loading', // Start in loading state
       difficulty,
       gameMode: currentState.gameMode, // Preserve the selected game mode
+      freeLookMode: currentState.freeLookMode, // Preserve free look mode
       highScore: currentState.highScore,
       lives: 3,
       aliens: [],
@@ -651,6 +728,140 @@ export const useGameStore = create((set, get) => ({
   // Zoom controls
   setZoomed: (isZoomed) => set({ isZoomed }),
   toggleZoom: () => set((state) => ({ isZoomed: !state.isZoomed })),
+  
+  // Advanced targeting controls
+  setTargetingEnabled: (enabled) => set({ targetingEnabled: enabled }),
+  setTargetingMode: (mode) => set({ targetingMode: mode }),
+  cycleTargetingMode: () => set((state) => {
+    const modes = ['blue', 'yellow', 'cyan'];
+    const currentIndex = modes.indexOf(state.targetingMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    return { targetingMode: modes[nextIndex] };
+  }),
+  setSelectedTarget: (target) => set({ selectedTarget: target }),
+  setTargetLock: (locked) => set({ targetLock: locked }),
+  setTargetPrediction: (prediction) => set({ targetPrediction: prediction }),
+  
+  // Hit indicator controls
+  triggerHitIndicator: () => set({ 
+    hitIndicator: { 
+      active: true, 
+      timestamp: Date.now() 
+    } 
+  }),
+  clearHitIndicator: () => set({ 
+    hitIndicator: { 
+      active: false, 
+      timestamp: 0 
+    } 
+  }),
+  
+  // Validation results controls
+  setValidationResults: (results) => set({ validationResults: results }),
+  clearValidationResults: () => set({ validationResults: null }),
+  
+  // Live targeting statistics controls
+  enableLiveTargetingStats: () => set((state) => ({
+    liveTargetingStats: { ...state.liveTargetingStats, enabled: true }
+  })),
+  disableLiveTargetingStats: () => set((state) => ({
+    liveTargetingStats: { ...state.liveTargetingStats, enabled: false }
+  })),
+  setCurrentLiveTarget: (target) => set((state) => ({
+    liveTargetingStats: { ...state.liveTargetingStats, currentTarget: target }
+  })),
+  recordTargetingShot: (shotData) => set((state) => {
+    // Find target info and truncate name
+    const target = state.aliens.find(a => a.id === shotData.targetId);
+    const rawName = target ? (target.name || target.type || 'Unknown') : 'No Target';
+    const targetName = String(rawName).substring(0, 8);
+    
+    // Create enhanced shot record
+    const enhancedShotData = {
+      ...shotData,
+      targetName: targetName,
+      closestDistance: shotData.distance // Will be updated by collision detection system
+    };
+    
+    const newShotHistory = [...state.liveTargetingStats.shotHistory, enhancedShotData];
+    // Keep only last 20 shots for cleaner display
+    if (newShotHistory.length > 20) {
+      newShotHistory.shift();
+    }
+    
+    // Update simplified session stats
+    const newSessionStats = { ...state.liveTargetingStats.sessionStats };
+    newSessionStats.shots++;
+    
+    if (shotData.hit) {
+      newSessionStats.hits++;
+    }
+    
+    newSessionStats.totalDistance += shotData.distance;
+    newSessionStats.avgDistance = newSessionStats.shots > 0 ? newSessionStats.totalDistance / newSessionStats.shots : 0;
+    
+    // Track closest distance (will be updated when missile gets closer to target)
+    newSessionStats.totalClosestDistance += shotData.distance; // Initial distance, will be updated
+    newSessionStats.avgClosestDistance = newSessionStats.shots > 0 ? newSessionStats.totalClosestDistance / newSessionStats.shots : 0;
+    
+    return {
+      liveTargetingStats: {
+        ...state.liveTargetingStats,
+        shotHistory: newShotHistory,
+        sessionStats: newSessionStats
+      }
+    };
+  }),
+  clearLiveTargetingStats: () => set((state) => ({
+    liveTargetingStats: {
+      ...state.liveTargetingStats,
+      shotHistory: [],
+      sessionStats: {
+        blue: { shots: 0, hits: 0, totalDistance: 0, avgDistance: 0 },
+        yellow: { shots: 0, hits: 0, totalDistance: 0, avgDistance: 0 },
+        cyan: { shots: 0, hits: 0, totalDistance: 0, avgDistance: 0 }
+      }
+    }
+  })),
+  
+  // Auto-fire targeting controls
+  toggleAutoFireTargeting: () => set((state) => ({
+    autoFireTargeting: {
+      ...state.autoFireTargeting,
+      enabled: !state.autoFireTargeting.enabled,
+      alignmentHistory: [], // Reset alignment history when toggling
+      lastFireTime: 0
+    }
+  })),
+  updateAutoFireAlignment: (isAligned) => set((state) => {
+    const newHistory = [...state.autoFireTargeting.alignmentHistory, isAligned];
+    // Keep only recent alignment history
+    if (newHistory.length > state.autoFireTargeting.stabilityRequired) {
+      newHistory.shift();
+    }
+    
+    return {
+      autoFireTargeting: {
+        ...state.autoFireTargeting,
+        alignmentHistory: newHistory
+      }
+    };
+  }),
+  updateAutoFireLastShot: () => set((state) => ({
+    autoFireTargeting: {
+      ...state.autoFireTargeting,
+      lastFireTime: Date.now()
+    }
+  })),
+  updateAutoFireDebug: (debugData) => set((state) => ({
+    autoFireTargeting: {
+      ...state.autoFireTargeting,
+      debug: {
+        ...state.autoFireTargeting.debug,
+        ...debugData
+      }
+    }
+  })),
   
   // Performance monitoring
   updatePerformance: (perfData) => set((state) => ({

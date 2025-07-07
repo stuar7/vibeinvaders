@@ -21,7 +21,10 @@
       "Bash(npm run lint)",
       "Bash(sed:*)",
       "Bash(cat:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(rm:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm test:*)"
     ],
     "deny": []
   }

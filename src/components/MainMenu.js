@@ -1,23 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKeyboard } from '../hooks/useKeyboard';
+import { useUISounds } from '../hooks/useGameSounds';
 import OptionsMenu from './OptionsMenu';
+import ShipViewer from './ShipViewer';
 
 function MainMenu() {
-  const [selectedOption, setSelectedOption] = useState(0); // 0 = Linear Campaign, 1 = Free Flight, 2 = Options
+  const [selectedOption, setSelectedOption] = useState(0); // 0 = Linear Campaign, 1 = Free Flight, 2 = Ship Viewer, 3 = Options
   const [showOptions, setShowOptions] = useState(false);
+  const [showShipViewer, setShowShipViewer] = useState(false);
   const keys = useKeyboard();
   const startGame = useGameStore((state) => state.startGame);
   const setGameMode = useGameStore((state) => state.setGameMode);
+  const { playHover, playSelect } = useUISounds();
   
   const menuOptions = [
     { title: 'Linear Campaign', description: 'Play through structured levels with increasing difficulty' },
     { title: 'Free Flight', description: 'Unlimited exploration with no boundaries or objectives' },
+    { title: 'Ship Viewer', description: 'View your ship from multiple angles' },
     { title: 'Options', description: 'Configure game settings and controls' }
   ];
 
   // Define functions first
   const handleSelection = useCallback((optionIndex = selectedOption) => {
+    playSelect(); // Play selection sound
     if (optionIndex === 0) {
       // Linear Campaign
       console.log('[MENU] Setting game mode to: campaign');
@@ -29,10 +35,13 @@ function MainMenu() {
       setGameMode('freeflight');
       startGame();
     } else if (optionIndex === 2) {
+      // Ship Viewer
+      setShowShipViewer(true);
+    } else if (optionIndex === 3) {
       // Options
       setShowOptions(true);
     }
-  }, [selectedOption, setGameMode, startGame]);
+  }, [selectedOption, setGameMode, startGame, playSelect]);
 
   // Handle mouse click selection
   const handleMouseClick = (optionIndex) => {
@@ -44,23 +53,34 @@ function MainMenu() {
   useEffect(() => {
     // A key or Left Arrow - select Linear Campaign
     if (keys.KeyA || keys.ArrowLeft) {
+      if (selectedOption !== 0) playHover();
       setSelectedOption(0);
     }
-  }, [keys.KeyA, keys.ArrowLeft]);
+  }, [keys.KeyA, keys.ArrowLeft, selectedOption, playHover]);
 
   useEffect(() => {
     // B key or Right Arrow - select Free Flight  
     if (keys.KeyB || keys.ArrowRight) {
+      if (selectedOption !== 1) playHover();
       setSelectedOption(1);
     }
-  }, [keys.KeyB, keys.ArrowRight]);
+  }, [keys.KeyB, keys.ArrowRight, selectedOption, playHover]);
+
+  useEffect(() => {
+    // S key - select Ship Viewer
+    if (keys.KeyS) {
+      if (selectedOption !== 2) playHover();
+      setSelectedOption(2);
+    }
+  }, [keys.KeyS, selectedOption, playHover]);
 
   useEffect(() => {
     // O key - select Options
     if (keys.KeyO) {
-      setSelectedOption(2);
+      if (selectedOption !== 3) playHover();
+      setSelectedOption(3);
     }
-  }, [keys.KeyO]);
+  }, [keys.KeyO, selectedOption, playHover]);
 
   useEffect(() => {
     // Enter key - confirm selection
@@ -107,17 +127,25 @@ function MainMenu() {
 
       {/* Menu Options */}
       <div style={{
-        display: 'flex',
-        gap: '4rem',
-        marginBottom: '3rem'
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '2rem',
+        marginBottom: '3rem',
+        maxWidth: '800px'
       }}>
         {menuOptions.map((option, index) => (
           <div
             key={index}
             onClick={() => handleMouseClick(index)}
+            onMouseEnter={() => {
+              if (selectedOption !== index) {
+                playHover();
+                setSelectedOption(index);
+              }
+            }}
             style={{
               padding: '2rem',
-              minWidth: '300px',
+              minWidth: '250px',
               textAlign: 'center',
               border: selectedOption === index ? '3px solid #00ffff' : '2px solid #444',
               borderRadius: '10px',
@@ -168,6 +196,11 @@ function MainMenu() {
       {/* Options Menu */}
       {showOptions && (
         <OptionsMenu onClose={() => setShowOptions(false)} />
+      )}
+      
+      {/* Ship Viewer */}
+      {showShipViewer && (
+        <ShipViewer onClose={() => setShowShipViewer(false)} />
       )}
     </div>
   );

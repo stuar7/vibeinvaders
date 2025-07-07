@@ -1,13 +1,70 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKeyboard } from '../hooks/useKeyboard';
-import { UnifiedGamespace, GAMESPACE_MASTER_CONFIG } from '../config/UnifiedGamespace';
+import useDraggableUI from '../hooks/useDraggableUI';
 import PowerUpTimers from './PowerUpTimers';
 import WeaponDisplay from './WeaponDisplay';
 import DefensiveDisplay from './DefensiveDisplay';
-import { APP_VERSION } from '../version';
+
+// Import all UI components
+import {
+  // Common
+  VersionDisplay,
+  
+  // Game HUD
+  ScoreDisplay,
+  LivesDisplay,
+  UIInteractionIndicator,
+  
+  // Targeting
+  AdvancedTargetingHUD,
+  TargetingValidationResults,
+  LiveTargetingStatistics,
+  
+  // Debug
+  GamespaceDimensions,
+  DebugInfoPanel,
+  EntityInfoPanel,
+  DebugControls,
+  
+  // Screens
+  StartupScreen,
+  GameOverScreen,
+  GameWonScreen,
+  LevelCompleteScreen,
+  PausedScreen,
+  HelpScreen
+} from './ui/index';
 
 function UI() {
+  const [showDetailedResults, setShowDetailedResults] = useState(false);
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState('blue');
+  
+  // Minimize states for debug panels (not persistent)
+  const [minimizedPanels, setMinimizedPanels] = useState({
+    debugPanel: false,
+    entityPanel: false,
+    gamespacePanel: false,
+    liveTargetingStats: false,
+    validationResults: false
+  });
+  
+  // Toggle minimize state for a panel
+  const toggleMinimize = (panelId) => {
+    setMinimizedPanels(prev => ({
+      ...prev,
+      [panelId]: !prev[panelId]
+    }));
+  };
+  
+  // Draggable UI hooks
+  const debugPanel = useDraggableUI('debugPanel');
+  const entityPanel = useDraggableUI('entityPanel');
+  const gamespacePanel = useDraggableUI('gamespacePanel');
+  const liveStatsPanel = useDraggableUI('liveTargetingStats');
+  const validationPanel = useDraggableUI('validationResults');
+  
+  // Game state
   const gameState = useGameStore((state) => state.gameState);
   const score = useGameStore((state) => state.score);
   const highScore = useGameStore((state) => state.highScore);
@@ -17,16 +74,37 @@ function UI() {
   const isPaused = useGameStore((state) => state.isPaused);
   const elapsedTime = useGameStore((state) => state.elapsedTime);
   const updateGameTimer = useGameStore((state) => state.updateGameTimer);
-  // Removed unused playerPowerUps
+  
+  // Player state
   const playerPosition = useGameStore((state) => state.playerPosition);
   const playerVelocity = useGameStore((state) => state.playerVelocity);
   const playerRotation = useGameStore((state) => state.playerRotation);
   const playerRotationalVelocity = useGameStore((state) => state.playerRotationalVelocity);
+  
+  // Entity state
   const aliens = useGameStore((state) => state.aliens);
   const missiles = useGameStore((state) => state.missiles);
   const asteroids = useGameStore((state) => state.asteroids);
   const performance = useGameStore((state) => state.performance);
   
+  // Advanced targeting state
+  const targetingEnabled = useGameStore((state) => state.targetingEnabled);
+  const targetingMode = useGameStore((state) => state.targetingMode);
+  const selectedTarget = useGameStore((state) => state.selectedTarget);
+  const targetLock = useGameStore((state) => state.targetLock);
+  const targetPrediction = useGameStore((state) => state.targetPrediction);
+  const weapons = useGameStore((state) => state.weapons);
+  const gameMode = useGameStore((state) => state.gameMode);
+  const freeLookMode = useGameStore((state) => state.freeLookMode);
+  const validationResults = useGameStore((state) => state.validationResults);
+  const clearValidationResults = useGameStore((state) => state.clearValidationResults);
+  const liveTargetingStats = useGameStore((state) => state.liveTargetingStats);
+  const clearLiveTargetingStats = useGameStore((state) => state.clearLiveTargetingStats);
+  const autoFireTargeting = useGameStore((state) => state.autoFireTargeting);
+  const firstPersonMode = useGameStore((state) => state.firstPersonMode);
+  const uiInteractionMode = useGameStore((state) => state.uiInteractionMode);
+  
+  // Actions
   const setGameState = useGameStore((state) => state.setGameState);
   const startGame = useGameStore((state) => state.startGame);
   const toggleHelp = useGameStore((state) => state.toggleHelp);
@@ -40,6 +118,7 @@ function UI() {
   
   const keys = useKeyboard();
   
+  // Keyboard handlers
   useEffect(() => {
     if (keys.Enter) {
       if (gameState === 'startup') {
@@ -67,13 +146,22 @@ function UI() {
 
   useEffect(() => {
     if (keys.Escape) {
-      if (showHelp) {
+      if (validationResults) {
+        clearValidationResults();
+      } else if (showHelp) {
         toggleHelp();
       } else if (isPaused) {
         togglePause();
       }
     }
-  }, [keys.Escape, showHelp, isPaused, toggleHelp, togglePause]);
+  }, [keys.Escape, showHelp, isPaused, validationResults, toggleHelp, togglePause, clearValidationResults]);
+
+  // Handle ` key for closing validation results
+  useEffect(() => {
+    if (keys.Backquote && validationResults) { // Backquote is the ` key
+      clearValidationResults();
+    }
+  }, [keys.Backquote, validationResults, clearValidationResults]);
   
   // Update timer when playing
   useEffect(() => {
@@ -88,547 +176,130 @@ function UI() {
     };
   }, [gameState, isPaused, updateGameTimer]);
   
-  const formatTime = (milliseconds) => {
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-  
   return (
     <div className="ui-overlay">
       {gameState === 'playing' && (
         <>
-          <div className="score">
-            Score: {score} | High Score: {highScore} | Level: {level} | Time: {formatTime(elapsedTime)}
-          </div>
-          <div className="lives">
-            Ship: {(() => {
-              try {
-                const currentLives = typeof lives === 'number' ? lives : 0;
-                const safeLives = Math.max(0, Math.min(3, Math.floor(currentLives)));
-                const ships = [];
-                const destroyed = [];
-                
-                for (let i = 0; i < safeLives; i++) {
-                  ships.push('🚀');
-                }
-                for (let i = 0; i < (3 - safeLives); i++) {
-                  destroyed.push('💥');
-                }
-                
-                return [...ships, ...destroyed].join(' ');
-              } catch (error) {
-                console.error('Error rendering lives:', error, { lives });
-                return '🚀 🚀 🚀'; // Default display
-              }
-            })()}
-          </div>
+          <ScoreDisplay 
+            score={score}
+            highScore={highScore}
+            level={level}
+            elapsedTime={elapsedTime}
+          />
+          <LivesDisplay lives={lives} />
           <PowerUpTimers />
           <WeaponDisplay />
           <DefensiveDisplay />
           
-          {/* Gamespace Dimensions - moved above debug controls and made taller */}
+          <UIInteractionIndicator 
+            gameMode={gameMode}
+            uiInteractionMode={uiInteractionMode}
+          />
+          
+          <AdvancedTargetingHUD
+            gameMode={gameMode}
+            freeLookMode={freeLookMode}
+            targetingEnabled={targetingEnabled}
+            targetLock={targetLock}
+            selectedTarget={selectedTarget}
+            targetingMode={targetingMode}
+            weapons={weapons}
+            targetPrediction={targetPrediction}
+            autoFireTargeting={autoFireTargeting}
+            firstPersonMode={firstPersonMode}
+          />
+          
+          <TargetingValidationResults
+            validationResults={validationResults}
+            draggableProps={validationPanel.draggableProps}
+            showDetailedResults={showDetailedResults}
+            setShowDetailedResults={setShowDetailedResults}
+          />
+          
+          <LiveTargetingStatistics
+            gameMode={gameMode}
+            freeLookMode={freeLookMode}
+            targetingEnabled={targetingEnabled}
+            liveTargetingStats={liveTargetingStats}
+            targetingMode={targetingMode}
+            clearLiveTargetingStats={clearLiveTargetingStats}
+            draggableProps={liveStatsPanel.draggableProps}
+            minimized={minimizedPanels.liveTargetingStats}
+            toggleMinimize={toggleMinimize}
+          />
+          
+          {/* Debug elements */}
           {debug.showDebugElements && (
-            <div className="gamespace-info" style={{
-              position: 'fixed',
-              top: '120px',
-              left: '20px',
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              border: '1px solid #555',
-              borderRadius: '4px',
-              padding: '15px',
-              color: '#fff',
-              fontSize: '12px',
-              minHeight: '150px',
-              zIndex: 999,
-            }}>
-              <h4 style={{ color: '#00ff00', marginTop: 0, marginBottom: '10px' }}>Gamespace Dimensions</h4>
-              <div>Center: ({GAMESPACE_MASTER_CONFIG.center.x}, {GAMESPACE_MASTER_CONFIG.center.y}, {GAMESPACE_MASTER_CONFIG.center.z})</div>
-              <div>Width: {GAMESPACE_MASTER_CONFIG.bounds.width} (E/W)</div>
-              <div>Height: {GAMESPACE_MASTER_CONFIG.bounds.height} (N/S)</div>
-              <div>Length: {GAMESPACE_MASTER_CONFIG.length}</div>
-              <div>Segments: {GAMESPACE_MASTER_CONFIG.segments}</div>
-              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #444' }}>
-                <strong>Player Position:</strong><br/>
-                X: {playerPosition.x.toFixed(2)}<br/>
-                Y: {playerPosition.y.toFixed(2)}<br/>
-                Z: {playerPosition.z || 0}<br/>
-                Distance from center: {UnifiedGamespace.getDistanceFromCenter(playerPosition.x, playerPosition.y).toFixed(2)}
-                
-                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                  <strong>Player Velocity:</strong><br/>
-                  X: {playerVelocity.x.toFixed(3)}<br/>
-                  Y: {playerVelocity.y.toFixed(3)}<br/>
-                  Z: {playerVelocity.z.toFixed(3)}<br/>
-                  Speed: {Math.sqrt(playerVelocity.x ** 2 + playerVelocity.y ** 2 + playerVelocity.z ** 2).toFixed(3)}
-                </div>
-                
-                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                  <strong>Player Rotation:</strong><br/>
-                  X: {(playerRotation.x * 180 / Math.PI).toFixed(1)}°<br/>
-                  Y: {(playerRotation.y * 180 / Math.PI).toFixed(1)}°<br/>
-                  Z: {(playerRotation.z * 180 / Math.PI).toFixed(1)}°
-                </div>
-                
-                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                  <strong>Rotational Velocity:</strong><br/>
-                  X: {(playerRotationalVelocity.x * 180 / Math.PI).toFixed(1)}°/s<br/>
-                  Y: {(playerRotationalVelocity.y * 180 / Math.PI).toFixed(1)}°/s<br/>
-                  Z: {(playerRotationalVelocity.z * 180 / Math.PI).toFixed(1)}°/s (Q/E)
-                </div>
-              </div>
-            </div>
+            <>
+              <GamespaceDimensions
+                playerPosition={playerPosition}
+                playerVelocity={playerVelocity}
+                playerRotation={playerRotation}
+                playerRotationalVelocity={playerRotationalVelocity}
+                draggableProps={gamespacePanel.draggableProps}
+                minimized={minimizedPanels.gamespacePanel}
+                toggleMinimize={toggleMinimize}
+              />
+              
+              <DebugInfoPanel
+                performance={performance}
+                draggableProps={debugPanel.draggableProps}
+                minimized={minimizedPanels.debugPanel}
+                toggleMinimize={toggleMinimize}
+              />
+              
+              <EntityInfoPanel
+                aliens={aliens}
+                missiles={missiles}
+                asteroids={asteroids}
+                performance={performance}
+                draggableProps={entityPanel.draggableProps}
+                minimized={minimizedPanels.entityPanel}
+                toggleMinimize={toggleMinimize}
+              />
+            </>
           )}
           
-          {/* Debug Info Panel - moved to right side */}
-          {debug.showDebugElements && (
-            <div className="debug-info" style={{
-              position: 'fixed',
-              top: '120px',
-              right: '20px',
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              border: '1px solid #555',
-              borderRadius: '4px',
-              padding: '15px',
-              color: '#fff',
-              fontSize: '12px',
-              zIndex: 999,
-              minHeight: '500px',
-              maxHeight: '70vh',
-              overflowY: 'auto',
-            }}>
-              {aliens.length > 0 && (
-                <div className="debug-section">
-                  <h4>Aliens ({aliens.length})</h4>
-                  {aliens.slice(0, 5).map((alien, i) => (
-                    <div key={i} className="entity-pos">
-                      <div>A{i+1} T{alien.type}: ({alien.position.x.toFixed(1)}, {alien.position.y.toFixed(1)}, {alien.position.z.toFixed(1)})</div>
-                      <div style={{fontSize: '10px', color: '#aaa', marginLeft: '10px'}}>
-                        HP: {alien.health}/{alien.maxHealth} | 
-                        {alien.isFlying ? ' Flying' : ' Combat'} | 
-                        Pts: {alien.points}
-                      </div>
-                    </div>
-                  ))}
-                  {aliens.length > 5 && <div>... +{aliens.length - 5} more</div>}
-                </div>
-              )}
-              
-              {missiles.length > 0 && (
-                <div className="debug-section">
-                  <h4>Missiles ({missiles.length})</h4>
-                  {missiles.slice(0, 3).map((missile, i) => (
-                    <div key={i} className="entity-pos">
-                      M{i+1}: ({missile.position.x.toFixed(1)}, {missile.position.y.toFixed(1)}, {missile.position.z.toFixed(1)})
-                    </div>
-                  ))}
-                  {missiles.length > 3 && <div>... +{missiles.length - 3} more</div>}
-                </div>
-              )}
-              
-              {asteroids.length > 0 && (
-                <div className="debug-section">
-                  <h4>Asteroids ({asteroids.length})</h4>
-                  {asteroids.slice(0, 3).map((asteroid, i) => (
-                    <div key={i} className="entity-pos">
-                      <div>As{i+1} {asteroid.type}: ({asteroid.position.x.toFixed(1)}, {asteroid.position.y.toFixed(1)}, {asteroid.position.z.toFixed(1)})</div>
-                      <div style={{fontSize: '10px', color: '#aaa', marginLeft: '10px'}}>
-                        HP: {asteroid.health || 'N/A'}/{asteroid.maxHealth || 'N/A'} | 
-                        Size: {asteroid.size?.toFixed(1) || 'N/A'} | 
-                        {asteroid.isDoodad ? ' Doodad' : ' Active'}
-                      </div>
-                    </div>
-                  ))}
-                  {asteroids.length > 3 && <div>... +{asteroids.length - 3} more</div>}
-                </div>
-              )}
-
-              {/* Performance Monitor - Under Entity Tracker */}
-              <div className="debug-section" style={{ marginTop: '15px', paddingTop: '15px', borderTop: '2px solid #ff6600' }}>
-                <h4 style={{ color: '#ff6600', marginTop: 0, marginBottom: '10px' }}>Performance Monitor</h4>
-                
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>Frame Performance:</strong><br/>
-                  FPS: <span style={{ color: performance.frameRate < 30 ? '#ff0000' : performance.frameRate < 50 ? '#ffaa00' : '#00ff00' }}>
-                    {performance.frameRate}
-                  </span> | Target: 60<br/>
-                  Current: {performance.frameTime.toFixed(1)}ms | Avg: {(performance.avgFrameTime || 0).toFixed(1)}ms | Max: {(performance.maxFrameTime || 0).toFixed(1)}ms<br/>
-                  Render Time: {performance.renderTime.toFixed(1)}ms<br/>
-                  Frame Budget: <span style={{ color: performance.frameTime > (1000/60) ? '#ff0000' : '#00ff00' }}>
-                    {((performance.frameTime / (1000/60)) * 100).toFixed(1)}%
-                  </span> | GC Events: {performance.gcEvents || 0}
-                </div>
-                
-                <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                  <strong>System Resources:</strong><br/>
-                  JS Memory: {performance.memoryUsage.toFixed(1)} MB<br/>
-                  Triangles: {performance.triangleCount.toLocaleString()}<br/>
-                  Draw Calls: {performance.drawCalls || 'N/A'}<br/>
-                  Geometries: {performance.geometries || 'N/A'}<br/>
-                  Textures: {performance.textures || 'N/A'}<br/>
-                  Objects: {aliens.length + missiles.length + asteroids.length}<br/>
-                  Entities: A:{aliens.length} M:<span style={{ color: missiles.length > 20 ? '#ff6600' : missiles.length > 10 ? '#ffaa00' : '#00ff00' }}>{missiles.length}</span> As:{asteroids.length}
-                </div>
-
-                {performance.poolStats && (
-                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Weapon Pool Usage:</strong><br/>
-                    {Object.entries(performance.poolStats).map(([weaponType, stats]) => (
-                      <div key={weaponType} style={{ fontSize: '10px', marginBottom: '2px' }}>
-                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '50px', display: 'inline-block' }}>
-                          {weaponType}:
-                        </span>
-                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
-                          {stats.active}/{stats.poolSize}
-                        </span>
-                        <span style={{ color: '#888', marginLeft: '8px' }}>
-                          ({stats.utilizationRate})
-                        </span>
-                        {stats.active > stats.poolSize * 0.8 && (
-                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {performance.effectsPoolStats && (
-                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Effects Pool Usage:</strong><br/>
-                    {Object.entries(performance.effectsPoolStats).map(([effectType, stats]) => (
-                      <div key={effectType} style={{ fontSize: '10px', marginBottom: '2px' }}>
-                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '70px', display: 'inline-block' }}>
-                          {effectType}:
-                        </span>
-                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
-                          {stats.active}/{stats.poolSize}
-                        </span>
-                        <span style={{ color: '#888', marginLeft: '8px' }}>
-                          ({stats.utilizationRate})
-                        </span>
-                        {stats.active > stats.poolSize * 0.8 && (
-                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {performance.cleanupWorkerStats && (
-                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Cleanup Worker:</strong><br/>
-                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
-                        Tracking:
-                      </span>
-                      <span style={{ color: performance.cleanupWorkerStats.totalMissiles > 50 ? '#ff6600' : '#00ff00' }}>
-                        {performance.cleanupWorkerStats.totalMissiles} missiles
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
-                        Avg Age:
-                      </span>
-                      <span style={{ color: performance.cleanupWorkerStats.averageAge > 15 ? '#ff6600' : '#888' }}>
-                        {performance.cleanupWorkerStats.averageAge}s
-                      </span>
-                      <span style={{ color: '#888', marginLeft: '8px' }}>
-                        (oldest: {performance.cleanupWorkerStats.oldestAge}s)
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-                      <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
-                        Status:
-                      </span>
-                      <span style={{ color: performance.cleanupWorkerStats.isRunning ? '#00ff00' : '#ff0000' }}>
-                        {performance.cleanupWorkerStats.isRunning ? 'Running' : 'Stopped'}
-                      </span>
-                      <span style={{ color: '#888', marginLeft: '8px' }}>
-                        (next: {performance.cleanupWorkerStats.nextCleanupIn}s)
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {performance.entityPoolStats && (
-                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Entity Pool Usage:</strong><br/>
-                    {Object.entries(performance.entityPoolStats)
-                      .filter(([entityType]) => entityType.startsWith('alien_') || entityType.startsWith('asteroid_'))
-                      .map(([entityType, stats]) => (
-                      <div key={entityType} style={{ fontSize: '10px', marginBottom: '2px' }}>
-                        <span style={{ color: '#aaa', textTransform: 'uppercase', width: '80px', display: 'inline-block' }}>
-                          {entityType.replace('_', ' ')}:
-                        </span>
-                        <span style={{ color: stats.active > 0 ? '#00ff00' : '#666' }}>
-                          {stats.active}/{stats.poolSize}
-                        </span>
-                        <span style={{ color: '#888', marginLeft: '8px' }}>
-                          ({stats.utilizationRate})
-                        </span>
-                        {stats.active > stats.poolSize * 0.8 && (
-                          <span style={{ color: '#ff6600', marginLeft: '4px' }}>⚠</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {performance.triangleBreakdown && performance.triangleCount > 50000 && (
-                  <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Triangle Breakdown ({performance.triangleCount.toLocaleString()}):</strong><br/>
-                    <div style={{ fontSize: '9px', marginBottom: '4px' }}>
-                      <strong>By Component:</strong>
-                    </div>
-                    {Object.entries(performance.triangleBreakdown.byComponent)
-                      .sort(([,a], [,b]) => b - a)
-                      .map(([component, count]) => (
-                        <div key={component} style={{ fontSize: '9px', marginBottom: '1px' }}>
-                          <span style={{ color: '#aaa', width: '80px', display: 'inline-block' }}>
-                            {component}:
-                          </span>
-                          <span style={{ color: count > 10000 ? '#ff6600' : count > 5000 ? '#ffaa00' : '#00ff00' }}>
-                            {count.toLocaleString()}
-                          </span>
-                          <span style={{ color: '#888', marginLeft: '4px' }}>
-                            ({((count / performance.triangleCount) * 100).toFixed(1)}%)
-                          </span>
-                        </div>
-                      ))}
-                    {performance.triangleBreakdown.topContributors.length > 0 && (
-                      <>
-                        <div style={{ fontSize: '9px', marginTop: '4px', marginBottom: '2px' }}>
-                          <strong>Top Contributors:</strong>
-                        </div>
-                        {performance.triangleBreakdown.topContributors.slice(0, 3).map((contributor, i) => (
-                          <div key={i} style={{ fontSize: '9px', marginBottom: '1px' }}>
-                            <span style={{ color: '#aaa', width: '60px', display: 'inline-block' }}>
-                              {contributor.name}:
-                            </span>
-                            <span style={{ color: contributor.triangles > 5000 ? '#ff6600' : '#ffaa00' }}>
-                              {contributor.triangles.toLocaleString()}
-                            </span>
-                            <span style={{ color: '#888', marginLeft: '4px', fontSize: '8px' }}>
-                              {contributor.type}
-                            </span>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                  <strong>Performance Bottlenecks:</strong><br/>
-                  {performance.frameRate < 30 && <div style={{ color: '#ff0000' }}>⚠ Low FPS detected</div>}
-                  {performance.frameTime > (1000/60) && <div style={{ color: '#ff6600' }}>⚠ Frame budget exceeded</div>}
-                  {performance.memoryUsage > 100 && <div style={{ color: '#ffaa00' }}>⚠ High memory usage</div>}
-                  {performance.triangleCount > 50000 && <div style={{ color: '#ffaa00' }}>⚠ High triangle count</div>}
-                  {(aliens.length + missiles.length + asteroids.length) > 100 && <div style={{ color: '#ffaa00' }}>⚠ Many objects</div>}
-                </div>
-
-                {performance.spikes && performance.spikes.length > 0 && (
-                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Recent Performance Spikes:</strong><br/>
-                    {performance.spikes.slice(-5).map((spike, i) => (
-                      <div key={i} style={{ fontSize: '10px', marginBottom: '4px', padding: '2px', backgroundColor: 'rgba(255, 0, 0, 0.1)', borderRadius: '2px' }}>
-                        <div style={{ color: '#ff6600' }}>
-                          {spike.frameTime.toFixed(1)}ms spike ({((Date.now() - spike.time) / 1000).toFixed(1)}s ago)
-                        </div>
-                        <div style={{ color: '#aaa', fontSize: '9px' }}>
-                          Missiles: <span style={{ color: spike.missileCount > 20 ? '#ff0000' : '#aaa' }}>{spike.missileCount}</span> | 
-                          Aliens: {spike.alienCount} | 
-                          Triangles: {spike.triangleCount.toLocaleString()} | 
-                          Calls: {spike.drawCalls}
-                        </div>
-                        {spike.poolStats && (
-                          <div style={{ color: '#888', fontSize: '8px' }}>
-                            Pool: R:{spike.poolStats.rocket?.active || 0}/{spike.poolStats.rocket?.poolSize || 0} | 
-                            B:{spike.poolStats.bfg?.active || 0}/{spike.poolStats.bfg?.poolSize || 0} | 
-                            💣:{spike.poolStats.bomb?.active || 0}/{spike.poolStats.bomb?.poolSize || 0} | 
-                            ⚡:{spike.poolStats.railgun?.active || 0}/{spike.poolStats.railgun?.poolSize || 0}
-                          </div>
-                        )}
-                        <div style={{ color: '#ccc', fontSize: '9px' }}>
-                          {spike.cause}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {Object.keys(performance.componentTimes).length > 0 && (
-                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #333' }}>
-                    <strong>Component Render Times:</strong><br/>
-                    {Object.entries(performance.componentTimes)
-                      .sort(([,a], [,b]) => b - a)
-                      .slice(0, 8)
-                      .map(([name, time]) => (
-                        <div key={name} style={{ fontSize: '10px' }}>
-                          {name}: <span style={{ color: time > 5 ? '#ff0000' : time > 2 ? '#ff6600' : '#00ff00' }}>
-                            {time.toFixed(2)}ms
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {/* Debug Controls */}
-          <div className="debug-controls">
-            <button 
-              className="debug-button"
-              onClick={toggleDebugGamespaceBounds}
-              style={{
-                background: debug.showGamespaceBounds ? '#00ff00' : '#333',
-                color: debug.showGamespaceBounds ? '#000' : '#fff'
-              }}
-            >
-              {debug.showGamespaceBounds ? 'Hide' : 'Show'} Bounds
-            </button>
-            <button 
-              className="debug-button"
-              onClick={toggleDebugElements}
-              style={{
-                background: debug.showDebugElements ? '#00ff00' : '#333',
-                color: debug.showDebugElements ? '#000' : '#fff'
-              }}
-            >
-              {debug.showDebugElements ? 'Hide' : 'Show'} Debug
-            </button>
-            <button 
-              className="debug-button"
-              onClick={toggleDebugCollisionCircles}
-              style={{
-                background: debug.showCollisionCircles ? '#00ff00' : '#333',
-                color: debug.showCollisionCircles ? '#000' : '#fff'
-              }}
-            >
-              {debug.showCollisionCircles ? 'Hide' : 'Show'} Collisions
-            </button>
-            <button 
-              className="debug-button"
-              onClick={toggleDebugBlasterCollisions}
-              style={{
-                background: debug.showBlasterCollisions ? '#00ff00' : '#333',
-                color: debug.showBlasterCollisions ? '#000' : '#fff'
-              }}
-            >
-              {debug.showBlasterCollisions ? 'Hide' : 'Show'} Blaster
-            </button>
-          </div>
+          <DebugControls
+            debug={debug}
+            toggleDebugGamespaceBounds={toggleDebugGamespaceBounds}
+            toggleDebugElements={toggleDebugElements}
+            toggleDebugCollisionCircles={toggleDebugCollisionCircles}
+            toggleDebugBlasterCollisions={toggleDebugBlasterCollisions}
+          />
         </>
       )}
       
+      {/* Game state screens */}
       {gameState === 'startup' && (
-        <div className="game-over">
-          <h1>SPACE INVADERS 3D</h1>
-          <p>Press ENTER to Start</p>
-          <p style={{ fontSize: '16px' }}>Press H for Help</p>
-        </div>
+        <StartupScreen 
+          setGameState={setGameState}
+          startGame={startGame}
+          resetGame={resetGame}
+        />
       )}
       
       {gameState === 'gameOver' && (
-        <div className="game-over">
-          <h1>GAME OVER</h1>
-          <p>Final Score: {score}</p>
-          <div className="game-over-buttons">
-            <button 
-              className="game-over-button default-selected"
-              onClick={() => {
-                resetGame();
-                setGameState('startup');
-              }}
-            >
-              Try Again
-            </button>
-            <button 
-              className="game-over-button"
-              onClick={() => setGameState('startup')}
-            >
-              Return to Menu
-            </button>
-          </div>
-          <p style={{ fontSize: '14px', marginTop: '20px', opacity: 0.8 }}>
-            Press ENTER for Try Again or click any button
-          </p>
-        </div>
+        <GameOverScreen 
+          score={score}
+          resetGame={resetGame}
+          setGameState={setGameState}
+        />
       )}
       
       {gameState === 'gameWon' && (
-        <div className="game-over">
-          <h1>YOU WIN!</h1>
-          <p>Final Score: {score}</p>
-          <p>Press ENTER to Play Again</p>
-        </div>
+        <GameWonScreen score={score} />
       )}
       
       {gameState === 'levelComplete' && (
-        <div className="level-complete">
-          <h1>LEVEL {level - 1} COMPLETE!</h1>
-          <p>Press ENTER to Continue</p>
-        </div>
+        <LevelCompleteScreen level={level} />
       )}
       
-      {isPaused && (
-        <div className="game-over">
-          <h1>PAUSED</h1>
-          <p>Press P to Resume</p>
-        </div>
-      )}
+      {isPaused && <PausedScreen />}
       
-      {showHelp && (
-        <div className="help-screen">
-          <h2>How to Play</h2>
-          <div style={{ marginBottom: '20px' }}>
-            <h3>Controls:</h3>
-            <p><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> Move ship</p>
-            <p><kbd>Space</kbd> Fire missiles (hold for continuous fire)</p>
-            <p><kbd>P</kbd> Pause game</p>
-            <p><kbd>H</kbd> Toggle this help</p>
-            <p><kbd>ESC</kbd> Close help/unpause</p>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <h3>Power-ups:</h3>
-            <p>🔵 Shield - Protects from one hit</p>
-            <p>⚡ Rapid Fire - Faster shooting</p>
-            <p>🟢 Multi-Shot - Triple missiles</p>
-            <p>❤️ Extra Life - Gain one life</p>
-            <p>⏰ Slow Time - Slows enemies</p>
-          </div>
-          
-          <div>
-            <h3>Enemies:</h3>
-            <p>🔴 Scout - 1 hit, 10 points</p>
-            <p>🔵 Armored - 2 hits, 15 points</p>
-            <p>🟢 Elite - 3 hits, 20 points</p>
-          </div>
-          
-          <p style={{ marginTop: '20px' }}>
-            Press <kbd>H</kbd> or <kbd>ESC</kbd> to close
-          </p>
-        </div>
-      )}
+      {showHelp && <HelpScreen />}
       
-      {/* Working directory and version - always visible */}
-      <div style={{
-        position: 'fixed',
-        top: '10px',
-        right: '10px',
-        color: '#666',
-        fontSize: '12px',
-        fontFamily: 'monospace',
-        opacity: 0.7,
-        textAlign: 'right',
-        lineHeight: '1.3'
-      }}>
-        <div>{process.env.PWD || 'Space Invaders R3F'}</div>
-        <div>v{APP_VERSION}</div>
-      </div>
+      <VersionDisplay />
     </div>
   );
 }

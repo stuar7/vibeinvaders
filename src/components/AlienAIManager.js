@@ -85,7 +85,9 @@ function AlienAIManager() {
             const fireChance = 0.002 * difficultyMultiplier;
             const earlyShootingDistance = -50.625;
             
-            if (!alien.isInvulnerable && 
+            // Debug aliens should never shoot
+            if (!alien.isDebugAlien &&
+                !alien.isInvulnerable && 
                 !playerPowerUps.stealth && 
                 (alien.isAtCombatDistance || alien.position.z > earlyShootingDistance)) {
               
@@ -253,7 +255,8 @@ function AlienAIManager() {
           chargeStartTime: alien.chargeStartTime,
           chargeLevel: alien.chargeLevel,
           lastChargeTime: alien.lastChargeTime,
-          behaviorState: alien.behaviorState
+          behaviorState: alien.behaviorState,
+          isDebugAlien: alien.isDebugAlien
         })),
         playerPosition,
         playerPowerUps,

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sound System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+        h1 {
+            color: #00ffff;
+            text-align: center;
+        }
+        .sound-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .sound-button {
+            padding: 15px;
+            border: 2px solid #00ffff;
+            background: rgba(0, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        .sound-button:hover {
+            background: rgba(0, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+        .sound-button.missing {
+            border-color: #ff6666;
+            background: rgba(255, 102, 102, 0.1);
+            opacity: 0.5;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            background: rgba(0, 255, 255, 0.1);
+        }
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Space Invader Sound System Test</h1>
+    
+    <div class="status" id="status">
+        Click any button to initialize audio and test sounds
+    </div>
+    
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Place sound files in <code>public/sounds/</code></li>
+            <li>Click buttons to test each sound</li>
+            <li>Green buttons = sound found</li>
+            <li>Red buttons = sound missing (game will still work!)</li>
+            <li>Check browser console for detailed logs</li>
+        </ol>
+    </div>
+    
+    <h2>Weapon Sounds</h2>
+    <div class="sound-grid" id="weapons"></div>
+    
+    <h2>Impact & Explosion Sounds</h2>
+    <div class="sound-grid" id="impacts"></div>
+    
+    <h2>UI & Power-up Sounds</h2>
+    <div class="sound-grid" id="ui"></div>
+    
+    <script>
+        // Simple test version of sound manager
+        class TestSoundManager {
+            constructor() {
+                this.audioContext = null;
+                this.sounds = new Map();
+                this.initialized = false;
+            }
+            
+            async init() {
+                if (this.initialized) return;
+                
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.initialized = true;
+                    document.getElementById('status').textContent = '✓ Audio system initialized';
+                    document.getElementById('status').style.background = 'rgba(0, 255, 0, 0.2)';
+                } catch (error) {
+                    console.error('Failed to initialize audio:', error);
+                }
+            }
+            
+            async loadSound(id, url) {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error('Not found');
+                    
+                    const arrayBuffer = await response.arrayBuffer();
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    this.sounds.set(id, audioBuffer);
+                    return true;
+                } catch (error) {
+                    console.log(`Sound not found: ${id} (${url})`);
+                    return false;
+                }
+            }
+            
+            play(soundId) {
+                const buffer = this.sounds.get(soundId);
+                if (!buffer) return;
+                
+                const source = this.audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(this.audioContext.destination);
+                source.start();
+            }
+        }
+        
+        const soundManager = new TestSoundManager();
+        
+        // Sound configuration
+        const sounds = {
+            weapons: [
+                'laser_basic.mp3',
+                'laser_beam.mp3',
+                'chaingun.mp3',
+                'bfg_charge.mp3',
+                'rocket_launch.mp3',
+                'railgun.mp3'
+            ],
+            impacts: [
+                'impact_small.mp3',
+                'explosion_small.mp3',
+                'explosion_medium.mp3',
+                'explosion_large.mp3',
+                'shield_hit.mp3'
+            ],
+            ui: [
+                'powerup_collect.mp3',
+                'game_start.mp3',
+                'game_over.mp3',
+                'level_complete.mp3',
+                'menu_select.mp3'
+            ]
+        };
+        
+        // Create buttons
+        async function createButtons() {
+            for (const [category, soundList] of Object.entries(sounds)) {
+                const container = document.getElementById(category);
+                
+                for (const soundFile of soundList) {
+                    const button = document.createElement('button');
+                    button.className = 'sound-button';
+                    button.textContent = soundFile.replace('.mp3', '');
+                    
+                    const soundPath = `/sounds/${soundFile}`;
+                    const loaded = await soundManager.loadSound(soundFile, soundPath);
+                    
+                    if (!loaded) {
+                        button.classList.add('missing');
+                        button.title = 'Sound file missing';
+                    }
+                    
+                    button.onclick = async () => {
+                        await soundManager.init();
+                        soundManager.play(soundFile);
+                    };
+                    
+                    container.appendChild(button);
+                }
+            }
+        }
+        
+        // Initialize on page load
+        createButtons();
+    </script>
+</body>
+</html>

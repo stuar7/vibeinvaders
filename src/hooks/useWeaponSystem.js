@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import weaponMeshPool from '../systems/WeaponMeshPool2';
+import soundManager from '../systems/SoundManager';
 import * as THREE from 'three';
 
 export const useWeaponSystem = ({ 
@@ -191,6 +192,7 @@ export const useWeaponSystem = ({
           type: 'player',
           weaponType: weaponType,
           homing: playerPowerUps.homingWeapons || weaponType === 'rocket',
+          timestamp: now, // Add timestamp for tracking
         };
         
         // Add weapon-specific properties
@@ -288,6 +290,10 @@ export const useWeaponSystem = ({
         if (['rocket', 'bfg', 'bomb', 'railgun'].includes(weaponType)) {
           const mesh = weaponMeshPool.acquireLiveMissile(weaponType, missileData);
           if (mesh) {
+            // Play weapon sound for complex weapons since they bypass the store
+            soundManager.playWeaponSound(weaponType, {
+              pitchVariation: 0.1
+            });
             return true;
           } else {
             console.warn(`[DIRECT FIRE] Failed to acquire ${weaponType} from pool`);
@@ -295,6 +301,7 @@ export const useWeaponSystem = ({
           }
         } else {
           // For simple weapons, still use the old system temporarily
+          // Sound will be handled by useGameSounds hook when missile is added to store
           return missileData;
         }
       };
@@ -316,6 +323,14 @@ export const useWeaponSystem = ({
           });
         });
         
+        // Play weapon sound for successful fires (both simple and complex weapons)
+        const successfulFires = fireResults.filter(result => result === true || (result && typeof result === 'object' && result.position)).length;
+        if (successfulFires > 0) {
+          soundManager.playWeaponSound(currentWeapons.current, {
+            pitchVariation: 0.1
+          });
+        }
+        
         // Count successful fires for complex weapons
         const complexFires = fireResults.filter(result => result === true).length;
         // Removed console.log for performance
@@ -331,8 +346,32 @@ export const useWeaponSystem = ({
             type: 'add',
             missile: fireResult
           });
+          // Play weapon sound for simple weapons as backup (in case store hook fails)
+          soundManager.playWeaponSound(currentWeapons.current, {
+            pitchVariation: 0.1
+          });
         } else {
           // Failed to fire weapon - skip logging for performance
+        }
+        
+        // Record manual shot for live targeting stats
+        const gameStore = useGameStore.getState();
+        if (gameStore.liveTargetingStats.enabled && gameStore.selectedTarget && gameStore.targetingEnabled) {
+          const selectedTarget = gameStore.selectedTarget;
+          const playerPosition = gameStore.playerPosition;
+          const distance = Math.sqrt(
+            Math.pow(selectedTarget.position.x - playerPosition.x, 2) +
+            Math.pow(selectedTarget.position.y - playerPosition.y, 2) +
+            Math.pow(selectedTarget.position.z - (playerPosition.z || 0), 2)
+          );
+          
+          gameStore.recordTargetingShot({
+            timestamp: Date.now(),
+            distance: distance,
+            hit: false, // Will be updated by collision detection
+            targetId: selectedTarget.id,
+            manual: true // Flag to distinguish from auto-fire shots
+          });
         }
       }
     };

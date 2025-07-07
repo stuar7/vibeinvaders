@@ -11,6 +11,7 @@ function FollowCamera() {
   const playerRotation = useGameStore((state) => state.playerRotation);
   const isZoomed = useGameStore((state) => state.isZoomed);
   const zoomFOV = useGameStore((state) => state.zoomFOV);
+  const firstPersonMode = useGameStore((state) => state.firstPersonMode);
   const { pointer } = useThree();
   
   // Star Fox 64-style camera state
@@ -126,7 +127,22 @@ function FollowCamera() {
         cameraState.shake.intensity *= 0.9; // Decay shake
       }
       
-      if (freeLookMode && playerRotation) {
+      if (firstPersonMode && playerRotation) {
+        // First-person cockpit mode - camera at ship position
+        camera.position.set(
+          playerPosition.x + cameraState.shake.x,
+          playerPosition.y + cameraState.shake.y,
+          (playerPosition.z || 0) + cameraState.shake.z
+        );
+        
+        // Camera rotation matches ship exactly
+        camera.rotation.set(
+          playerRotation.x + cameraState.shake.x * 0.1,
+          playerRotation.y + cameraState.shake.y * 0.1,
+          playerRotation.z + cameraState.shake.z * 0.1,
+          'XYZ'
+        );
+      } else if (freeLookMode && playerRotation) {
         // In free flight mode, attach camera to ship and rotate with it
         // Create a transformation matrix from ship's rotation
         const shipRotationMatrix = new THREE.Matrix4();

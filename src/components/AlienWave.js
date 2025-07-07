@@ -202,9 +202,92 @@ function AlienWave({ level, difficultyMultiplier }) {
     spawnAlien(4, bossData);
   };
 
+  const spawnDebugAliens = () => {
+    console.log('🐛 Spawning debug aliens for level 1!');
+    
+    // Debug Alien 1: Fly in a circle
+    const circleAlien = spawnAlien(1, {
+      position: { x: 10, y: 15, z: -30 },
+      velocity: { x: 0, y: 0, z: 0 },
+      isAtCombatDistance: false,
+      isFlying: false,
+      isDebugAlien: true,
+      debugMovementType: 'circle',
+      debugRadius: 10,
+      debugSpeed: 0.5,
+      debugAngle: 0,
+      behaviorState: 'debug',
+    });
+    
+    // Debug Alien 2: Fly in an oval
+    const ovalAlien = spawnAlien(2, {
+      position: { x: -10, y: 15, z: -30 },
+      velocity: { x: 0, y: 0, z: 0 },
+      isAtCombatDistance: false,
+      isFlying: false,
+      isDebugAlien: true,
+      debugMovementType: 'oval',
+      debugRadiusX: 15,
+      debugRadiusY: 8,
+      debugSpeed: 0.4,
+      debugAngle: 0,
+      behaviorState: 'debug',
+    });
+    
+    // Debug Alien 3: Fly up and down (z-axis strafing)
+    const verticalAlien = spawnAlien(3, {
+      position: { x: 0, y: 15, z: -40 },
+      velocity: { x: 0, y: 0, z: 0 },
+      isAtCombatDistance: false,
+      isFlying: false,
+      isDebugAlien: true,
+      debugMovementType: 'vertical',
+      debugStartZ: -40,
+      debugEndZ: -20,
+      debugSpeed: 0.3,
+      debugDirection: 1,
+      behaviorState: 'debug',
+    });
+    
+    // Debug Alien 4: Fly left and right (x-axis strafing)
+    const horizontalAlien = spawnAlien(1, {
+      position: { x: 0, y: 10, z: -35 },
+      velocity: { x: 0, y: 0, z: 0 },
+      isAtCombatDistance: false,
+      isFlying: false,
+      isDebugAlien: true,
+      debugMovementType: 'horizontal',
+      debugStartX: -15,
+      debugEndX: 15,
+      debugSpeed: 0.6,
+      debugDirection: 1,
+      behaviorState: 'debug',
+    });
+    
+    // Debug Alien 5: Stationary target (only 1)
+    const stationaryAlien = spawnAlien(5, {
+      position: { x: 0, y: 20, z: -25 },
+      velocity: { x: 0, y: 0, z: 0 },
+      isAtCombatDistance: false,
+      isFlying: false,
+      isDebugAlien: true,
+      debugMovementType: 'stationary',
+      behaviorState: 'debug',
+    });
+  };
+
+  // Spawn debug aliens once when level 1 starts
+  const debugAliensSpawnedRef = useRef(false);
+
   useFrame((state, delta) => {
     // Don't spawn aliens if game isn't playing
     if (gameState !== 'playing') return;
+    
+    // Spawn debug aliens once on level 1
+    if (level === 1 && !debugAliensSpawnedRef.current && gameState === 'playing') {
+      debugAliensSpawnedRef.current = true;
+      spawnDebugAliens();
+    }
     
     // Get fresh aliens list each frame
     const currentAliens = useGameStore.getState().aliens || [];
@@ -213,7 +296,7 @@ function AlienWave({ level, difficultyMultiplier }) {
     spawnRef.current.bossTimer += delta;
     
     // ALGORITHM LIMIT: Check alien count before spawning boss
-    if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval && currentAliens.length < 30) {
+    if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval && currentAliens.length < 20) {
       spawnBoss();
       spawnRef.current.bossTimer = 0;
     }
@@ -221,9 +304,9 @@ function AlienWave({ level, difficultyMultiplier }) {
     // Spawn new aliens over time (like asteroids)
     spawnRef.current.spawnTimer += delta;
     
-    // ALGORITHM LIMIT: Cap at 30 aliens for this spawning system
+    // ALGORITHM LIMIT: Cap at 20 aliens for this spawning system
     // This limit only applies to the automatic spawning algorithm, not event-based waves
-    const alienSpawnLimit = 30;
+    const alienSpawnLimit = 20;
     const currentAlienCount = currentAliens.length;
     
     if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval && currentAlienCount < alienSpawnLimit) {
@@ -264,6 +347,66 @@ function AlienWave({ level, difficultyMultiplier }) {
       let newZ = alien.position.z + alien.velocity.z * adjustedDelta;
       
       let updatedAlien = { ...alien };
+      
+      // Handle debug alien movement patterns
+      if (alien.isDebugAlien) {
+        switch (alien.debugMovementType) {
+          case 'circle':
+            // Move in a circular pattern
+            alien.debugAngle = (alien.debugAngle || 0) + alien.debugSpeed * adjustedDelta;
+            newX = alien.debugRadius * Math.cos(alien.debugAngle) + 10; // Center at x=10
+            newY = alien.debugRadius * Math.sin(alien.debugAngle) + 15; // Center at y=15
+            newZ = -30; // Fixed Z position
+            break;
+            
+          case 'oval':
+            // Move in an oval pattern
+            alien.debugAngle = (alien.debugAngle || 0) + alien.debugSpeed * adjustedDelta;
+            newX = alien.debugRadiusX * Math.cos(alien.debugAngle) - 10; // Center at x=-10
+            newY = alien.debugRadiusY * Math.sin(alien.debugAngle) + 15; // Center at y=15
+            newZ = -30; // Fixed Z position
+            break;
+            
+          case 'vertical':
+            // Move up and down (z-axis strafing)
+            newX = 0; // Fixed X position
+            newY = 15; // Fixed Y position
+            newZ = alien.position.z + (alien.debugDirection * alien.debugSpeed * adjustedDelta);
+            
+            // Reverse direction at boundaries
+            if (newZ >= alien.debugEndZ || newZ <= alien.debugStartZ) {
+              alien.debugDirection *= -1;
+              newZ = Math.max(alien.debugStartZ, Math.min(alien.debugEndZ, newZ));
+            }
+            break;
+            
+          case 'horizontal':
+            // Move left and right (x-axis strafing)
+            newX = alien.position.x + (alien.debugDirection * alien.debugSpeed * adjustedDelta);
+            newY = 10; // Fixed Y position
+            newZ = -35; // Fixed Z position
+            
+            // Reverse direction at boundaries
+            if (newX >= alien.debugEndX || newX <= alien.debugStartX) {
+              alien.debugDirection *= -1;
+              newX = Math.max(alien.debugStartX, Math.min(alien.debugEndX, newX));
+            }
+            break;
+            
+          case 'stationary':
+            // Don't move at all
+            newX = alien.position.x;
+            newY = alien.position.y;
+            newZ = alien.position.z;
+            break;
+        }
+        
+        // Update alien position and skip normal behaviors
+        updatedAlien.position = { x: newX, y: newY, z: newZ };
+        updatedAlien.debugAngle = alien.debugAngle;
+        updatedAlien.debugDirection = alien.debugDirection;
+        return updatedAlien;
+      }
       
       // Handle spawn animations
       if (alien.isSpawning) {
@@ -424,7 +567,8 @@ function AlienWave({ level, difficultyMultiplier }) {
       // Check if player has stealth - if so, aliens can't see them to fire
       const playerHasStealth = useGameStore.getState().playerPowerUps.stealth;
       
-      if (!alien.isInvulnerable && !playerHasStealth && (alien.isAtCombatDistance || alien.position.z > earlyShootingDistance)) {
+      // Debug aliens should never shoot
+      if (!alien.isDebugAlien && !alien.isInvulnerable && !playerHasStealth && (alien.isAtCombatDistance || alien.position.z > earlyShootingDistance)) {
         // Boss BFG firing logic
         if (alien.isBoss && (now - alien.lastBfgFire) >= alien.bfgCooldown) {
           const dx = playerPosition.x - alien.position.x;

@@ -41,7 +41,9 @@ function VirtualJoystick() {
     meshRef.current.rotation.copy(new THREE.Euler(playerRotation.x, playerRotation.y, playerRotation.z));
   });
   
-  if (!freeLookMode) return null;
+  // This component is now integrated into FreeFlightCrosshair
+  // Return null to avoid duplicate rendering
+  return null;
   
   // TEMPORARY FIX: Use simple variables to avoid lexical declaration issues
   const vx = virtualJoystick.x;

@@ -27,6 +27,8 @@ import FreeFlightCrosshair from './FreeFlightCrosshair';
 import VirtualJoystick from './VirtualJoystick';
 import ChargeBall from './ChargeBall';
 import PredictiveCrosshairs from './PredictiveCrosshairs';
+import AdvancedTargeting from './AdvancedTargeting';
+import OffScreenTargetIndicator from './OffScreenTargetIndicator';
 import AlienAIManager from './AlienAIManager';
 import PerformanceManager from './PerformanceManager';
 import PoolTestComponent from './PoolTestComponent';
@@ -34,6 +36,7 @@ import AsyncAssetLoader from './AsyncAssetLoader';
 import LoadingScreen from './LoadingScreen';
 import { useGameStore } from '../store/gameStore';
 import { useKeyboard } from '../hooks/useKeyboard';
+import { useGameSounds } from '../hooks/useGameSounds';
 // Removed unused GameSpace imports - using UnifiedGamespace instead
 import { GAMESPACE_MASTER_CONFIG } from '../config/UnifiedGamespace';
 import weaponMeshPool from '../systems/WeaponMeshPool2';
@@ -46,6 +49,9 @@ function Game() {
   
   // Note: High render count is normal for games with animations
   // The real issue was game freezing, not just re-rendering
+  
+  // Initialize game sounds
+  useGameSounds();
   
   const gameState = useGameStore((state) => state.gameState);
   const gameMode = useGameStore((state) => state.gameMode);
@@ -553,6 +559,8 @@ function Game() {
       <VirtualJoystick />
       <ChargeBall />
       <PredictiveCrosshairs />
+      <AdvancedTargeting />
+      <OffScreenTargetIndicator />
       <AlienAIManager />
       {/* <AsyncAssetLoader /> */}
       {/* <PoolTestComponent /> */}

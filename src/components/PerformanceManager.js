@@ -50,24 +50,24 @@ function PerformanceManager() {
   useEffect(() => {
     try {
       // Collision Detection Worker
-      collisionWorkerRef.current = new Worker(new URL('../workers/collisionDetection.worker.js', import.meta.url));
+      // collisionWorkerRef.current = new Worker(new URL('../workers/collisionDetection.worker.js', import.meta.url));
           
-      collisionWorkerRef.current.onmessage = (e) => {
-        const { type, collisions, hits, timestamp } = e.data;
+      // collisionWorkerRef.current.onmessage = (e) => {
+      //   const { type, collisions, hits, timestamp } = e.data;
         
-        // Handle worker log messages with low priority processing
-        if (type === 'workerLog') {
-          workerLogProcessor.addLog(e.data);
-          return;
-        }
+      //   // Handle worker log messages with low priority processing
+      //   if (type === 'workerLog') {
+      //     workerLogProcessor.addLog(e.data);
+      //     return;
+      //   }
         
-        if (type === 'collisionResults') {
-          pendingCollisionsRef.current.set(timestamp, collisions);
-        } else if (type === 'explosionResults') {
-          // Handle explosion results immediately
-          processExplosionHits(hits);
-        }
-      };
+      //   if (type === 'collisionResults') {
+      //     pendingCollisionsRef.current.set(timestamp, collisions);
+      //   } else if (type === 'explosionResults') {
+      //     // Handle explosion results immediately
+      //     processExplosionHits(hits);
+      //   }
+      // };
       
       // Physics Worker
       physicsWorkerRef.current = new Worker(new URL('../workers/missilePhysics.worker.js', import.meta.url));

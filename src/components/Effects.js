@@ -67,7 +67,8 @@ function Effects() {
             );
             
             // Set scale and rotation
-            particle.userData.initialScale = 0.2 + Math.random() * 0.3;
+            // Reduced by 25% from (0.2-0.5) to (0.15-0.375)
+            particle.userData.initialScale = 0.15 + Math.random() * 0.225;
             particle.userData.initialRotation = Math.random() * Math.PI * 2;
             particle.userData.startTime = effect.startTime;
             

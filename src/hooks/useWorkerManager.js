@@ -122,16 +122,48 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
           const alienMap = new Map(currentAliens.map(a => [a.id, a]));
           const asteroidMap = new Map(currentAsteroids.map(a => [a.id, a]));
           
+          // Track closest distances for live targeting stats every frame
+          const gameStore = useGameStore.getState();
+          if (gameStore.liveTargetingStats.enabled && gameStore.liveTargetingStats.shotHistory.length > 0) {
+            // Update closest distances for all missiles in flight
+            allMissiles.forEach(missile => {
+              if (missile.type === 'player' && missile.timestamp) {
+                // Find the most recent shot record that matches this missile's timestamp
+                const shotRecord = gameStore.liveTargetingStats.shotHistory
+                  .filter(shot => shot.targetId && Math.abs(shot.timestamp - missile.timestamp) < 1000)
+                  .sort((a, b) => Math.abs(a.timestamp - missile.timestamp) - Math.abs(b.timestamp - missile.timestamp))[0];
+                
+                if (shotRecord) {
+                  const target = currentAliens.find(a => a.id === shotRecord.targetId);
+                  if (target) {
+                    const distance = Math.sqrt(
+                      Math.pow(missile.position.x - target.position.x, 2) +
+                      Math.pow(missile.position.y - target.position.y, 2) +
+                      Math.pow(missile.position.z - target.position.z, 2)
+                    );
+                    
+                    // Update closest distance if this is closer
+                    if (distance < shotRecord.closestDistance) {
+                      shotRecord.closestDistance = distance;
+                      // Update session stats as well
+                      const sessionStats = gameStore.liveTargetingStats.sessionStats;
+                      sessionStats.totalClosestDistance = gameStore.liveTargetingStats.shotHistory
+                        .reduce((sum, shot) => sum + shot.closestDistance, 0);
+                      sessionStats.avgClosestDistance = sessionStats.shots > 0 ? 
+                        sessionStats.totalClosestDistance / sessionStats.shots : 0;
+                    }
+                  }
+                }
+              }
+            });
+          }
+
           // Handle player/wingman missile vs alien collisions
           if (collisions.missileAlienHits && collisions.missileAlienHits.length > 0) {
-            console.log(`[COLLISION DEBUG] Processing ${collisions.missileAlienHits.length} missile-alien hits`);
             collisions.missileAlienHits.forEach(hit => {
               const missile = missileMap.get(hit.missileId);
               const alien = alienMap.get(hit.alienId);
               
-              console.log(`[COLLISION DEBUG] Hit: missile=${hit.missileId}, alien=${hit.alienId}`);
-              console.log(`[COLLISION DEBUG] Missile found:`, missile ? missile.weaponType : 'NOT FOUND');
-              console.log(`[COLLISION DEBUG] Alien found:`, alien ? `type ${alien.type}, health ${alien.health}` : 'NOT FOUND');
               
               if (missile && alien) {
                 // Calculate damage based on weapon type
@@ -152,12 +184,13 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
                   damage += (weaponLevel - 1);
                 }
                 
-                console.log(`[COLLISION DEBUG] Applying ${damage} damage to alien ${hit.alienId}`);
+                
+                // Trigger hit indicator on crosshair
+                useGameStore.getState().triggerHitIndicator();
                 
                 // Use Entity Pool damage system
                 const result = damageEntity(hit.alienId, damage);
                 
-                console.log(`[COLLISION DEBUG] Damage result: ${result}`);
                 
                 if (result === 'destroyed') {
                   // Entity pool already removed the alien
@@ -221,6 +254,9 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
                   default:
                     asteroidDamage = 1;
                 }
+                
+                // Trigger hit indicator on crosshair
+                useGameStore.getState().triggerHitIndicator();
                 
                 // Use Entity Pool damage system
                 const result = damageEntity(asteroid.id, asteroidDamage);

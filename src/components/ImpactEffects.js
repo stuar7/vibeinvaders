@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../store/gameStore';
 import * as THREE from 'three';
@@ -6,180 +6,328 @@ import * as THREE from 'three';
 function ImpactEffects() {
   const sparkRef = useRef();
   const explosionRef = useRef();
+  const debrisRef = useRef();
   const effects = useGameStore((state) => state.effects);
+  const removeEffect = useGameStore((state) => state.removeEffect);
+  
+  // Track processed effects to clean them up
+  const processedEffects = useRef(new Set());
   
   // Create impact spark particles
   const sparkData = useMemo(() => {
-    const positions = [];
-    const velocities = [];
-    const colors = [];
-    const sizes = [];
-    const lifetimes = [];
+    const positions = new Float32Array(300 * 3); // 100 particles * 3 coords
+    const velocities = new Float32Array(300);
+    const colors = new Float32Array(300 * 3);
+    const sizes = new Float32Array(300);
+    const lifetimes = new Float32Array(300);
     const count = 100;
     
     for (let i = 0; i < count; i++) {
-      positions.push(0, 0, 0); // Will be updated dynamically
-      velocities.push(
-        (Math.random() - 0.5) * 20,  // X: spread outward
-        (Math.random() - 0.5) * 20,  // Y: spread outward
-        (Math.random() - 0.5) * 15   // Z: some depth
-      );
-      colors.push(1, 1, 0.5); // Bright yellow-white sparks
-      sizes.push(Math.random() * 1.5 + 0.5);
-      lifetimes.push(0); // Will be set when spark is created
+      const i3 = i * 3;
+      positions[i3] = 0;
+      positions[i3 + 1] = 0;
+      positions[i3 + 2] = 0;
+      velocities[i] = 0;
+      colors[i3] = 1;
+      colors[i3 + 1] = 1;
+      colors[i3 + 2] = 0.5;
+      sizes[i] = 0;
+      lifetimes[i] = 0;
     }
     
-    return { positions, velocities, colors, sizes, lifetimes, count };
+    return { 
+      positions, 
+      velocities: new Float32Array(300), 
+      colors, 
+      sizes, 
+      lifetimes, 
+      count,
+      directions: new Float32Array(300) // Store normalized direction vectors
+    };
   }, []);
   
   // Create explosion particles
   const explosionData = useMemo(() => {
-    const positions = [];
-    const velocities = [];
-    const colors = [];
-    const sizes = [];
-    const lifetimes = [];
+    const positions = new Float32Array(450 * 3); // 150 particles * 3 coords
+    const velocities = new Float32Array(450);
+    const colors = new Float32Array(450 * 3);
+    const sizes = new Float32Array(450);
+    const lifetimes = new Float32Array(450);
     const count = 150;
     
     for (let i = 0; i < count; i++) {
-      positions.push(0, 0, 0); // Will be updated dynamically
-      velocities.push(
-        (Math.random() - 0.5) * 30,  // X: large spread
-        (Math.random() - 0.5) * 30,  // Y: large spread
-        (Math.random() - 0.5) * 25   // Z: depth movement
-      );
-      
-      // Explosion colors - red to orange to yellow
-      const heat = Math.random();
-      colors.push(
-        1.0,                    // R: always full red
-        0.3 + heat * 0.7,       // G: orange to yellow
-        heat * 0.5              // B: some yellow highlights
-      );
-      
-      sizes.push(Math.random() * 3 + 1);
-      lifetimes.push(0);
+      const i3 = i * 3;
+      positions[i3] = 0;
+      positions[i3 + 1] = 0;
+      positions[i3 + 2] = 0;
+      velocities[i] = 0;
+      colors[i3] = 1;
+      colors[i3 + 1] = 0.5;
+      colors[i3 + 2] = 0;
+      sizes[i] = 0;
+      lifetimes[i] = 0;
     }
     
-    return { positions, velocities, colors, sizes, lifetimes, count };
+    return { 
+      positions, 
+      velocities: new Float32Array(450),
+      colors, 
+      sizes, 
+      lifetimes, 
+      count,
+      directions: new Float32Array(450) // Store normalized direction vectors
+    };
   }, []);
   
-  useFrame((state, delta) => {
-    if (sparkRef.current) {
-      const positions = sparkRef.current.attributes.position.array;
-      const colors = sparkRef.current.attributes.color.array;
-      const sizes = sparkRef.current.attributes.size.array;
-      
-      // Update spark particles
-      for (let i = 0; i < sparkData.count; i++) {
-        const i3 = i * 3;
-        
-        if (sparkData.lifetimes[i] > 0) {
-          // Update position
-          positions[i3] += sparkData.velocities[i] * delta;
-          positions[i3 + 1] += sparkData.velocities[i + 1] * delta;
-          positions[i3 + 2] += sparkData.velocities[i + 2] * delta;
-          
-          // Apply gravity and friction
-          sparkData.velocities[i] *= 0.98;
-          sparkData.velocities[i + 1] *= 0.98;
-          sparkData.velocities[i + 2] *= 0.98;
-          
-          // Fade out over time
-          sparkData.lifetimes[i] -= delta;
-          const fade = Math.max(0, sparkData.lifetimes[i] / 1.0); // 1 second lifetime
-          
-          colors[i3] = fade * 1.0;     // R
-          colors[i3 + 1] = fade * 1.0; // G
-          colors[i3 + 2] = fade * 0.5; // B
-          
-          sizes[i] = sparkData.sizes[i] * fade;
-        } else {
-          // Hide dead particles
-          sizes[i] = 0;
-        }
-      }
-      
-      sparkRef.current.attributes.position.needsUpdate = true;
-      sparkRef.current.attributes.color.needsUpdate = true;
-      sparkRef.current.attributes.size.needsUpdate = true;
+  // Create debris particles (larger chunks)
+  const debrisData = useMemo(() => {
+    const positions = new Float32Array(60 * 3); // 20 particles * 3 coords
+    const velocities = new Float32Array(60);
+    const rotations = new Float32Array(60); // Angular velocities
+    const colors = new Float32Array(60 * 3);
+    const sizes = new Float32Array(60);
+    const lifetimes = new Float32Array(60);
+    const count = 20;
+    
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      positions[i3] = 0;
+      positions[i3 + 1] = 0;
+      positions[i3 + 2] = 0;
+      velocities[i] = 0;
+      rotations[i] = 0;
+      colors[i3] = 0.8;
+      colors[i3 + 1] = 0.8;
+      colors[i3 + 2] = 0.8;
+      sizes[i] = 0;
+      lifetimes[i] = 0;
     }
     
-    if (explosionRef.current) {
-      const positions = explosionRef.current.attributes.position.array;
-      const colors = explosionRef.current.attributes.color.array;
-      const sizes = explosionRef.current.attributes.size.array;
+    return { 
+      positions, 
+      velocities: new Float32Array(60),
+      rotations,
+      colors, 
+      sizes, 
+      lifetimes, 
+      count,
+      directions: new Float32Array(60) // Store normalized direction vectors
+    };
+  }, []);
+  
+  // Clean up processed effects periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const toRemove = Array.from(processedEffects.current);
+      if (toRemove.length > 0) {
+        // Remove effects that have been processed
+        toRemove.forEach(id => {
+          removeEffect(id);
+          processedEffects.current.delete(id);
+        });
+      }
+    }, 2000); // Clean up every 2 seconds
+    
+    return () => clearInterval(cleanupInterval);
+  }, [removeEffect]);
+  
+  useFrame((state, delta) => {
+    // Update spark particles
+    if (sparkRef.current && sparkRef.current.attributes) {
+      const positions = sparkRef.current.attributes.position;
+      const colors = sparkRef.current.attributes.color;
+      const sizes = sparkRef.current.attributes.size;
       
-      // Update explosion particles
-      for (let i = 0; i < explosionData.count; i++) {
-        const i3 = i * 3;
-        
-        if (explosionData.lifetimes[i] > 0) {
-          // Update position
-          positions[i3] += explosionData.velocities[i] * delta;
-          positions[i3 + 1] += explosionData.velocities[i + 1] * delta;
-          positions[i3 + 2] += explosionData.velocities[i + 2] * delta;
+      for (let i = 0; i < sparkData.count; i++) {
+        if (sparkData.lifetimes[i] > 0) {
+          const i3 = i * 3;
+          
+          // Update position using velocity
+          const velocity = sparkData.velocities[i];
+          positions.array[i3] += sparkData.directions[i3] * velocity * delta;
+          positions.array[i3 + 1] += sparkData.directions[i3 + 1] * velocity * delta;
+          positions.array[i3 + 2] += sparkData.directions[i3 + 2] * velocity * delta;
+          
+          // Apply gravity to Y component
+          sparkData.directions[i3 + 1] -= 9.8 * delta * 0.5;
           
           // Apply friction
-          explosionData.velocities[i] *= 0.95;
-          explosionData.velocities[i + 1] *= 0.95;
-          explosionData.velocities[i + 2] *= 0.95;
+          sparkData.velocities[i] *= 0.96;
           
-          // Fade out over time
-          explosionData.lifetimes[i] -= delta;
-          const fade = Math.max(0, explosionData.lifetimes[i] / 2.0); // 2 second lifetime
+          // Update lifetime
+          sparkData.lifetimes[i] -= delta;
+          const lifeRatio = sparkData.lifetimes[i] / 1.0;
           
-          // Color transition from white -> red -> orange -> dark
-          const intensity = fade * fade; // Squared for faster falloff
-          colors[i3] = intensity * 1.0;     // R
-          colors[i3 + 1] = intensity * (0.3 + fade * 0.7); // G
-          colors[i3 + 2] = intensity * fade * 0.5; // B
+          // Fade out
+          const fade = Math.max(0, lifeRatio);
+          colors.array[i3] = fade;
+          colors.array[i3 + 1] = fade * 0.8;
+          colors.array[i3 + 2] = fade * 0.3;
           
-          sizes[i] = explosionData.sizes[i] * fade;
+          sizes.array[i] = fade * sparkData.sizes[i];
         } else {
-          // Hide dead particles
-          sizes[i] = 0;
+          sizes.array[i] = 0;
         }
       }
       
-      explosionRef.current.attributes.position.needsUpdate = true;
-      explosionRef.current.attributes.color.needsUpdate = true;
-      explosionRef.current.attributes.size.needsUpdate = true;
+      positions.needsUpdate = true;
+      colors.needsUpdate = true;
+      sizes.needsUpdate = true;
     }
     
-    // Check for new impact effects to spawn
+    // Update explosion particles
+    if (explosionRef.current && explosionRef.current.attributes) {
+      const positions = explosionRef.current.attributes.position;
+      const colors = explosionRef.current.attributes.color;
+      const sizes = explosionRef.current.attributes.size;
+      
+      for (let i = 0; i < explosionData.count; i++) {
+        if (explosionData.lifetimes[i] > 0) {
+          const i3 = i * 3;
+          
+          // Update position
+          const velocity = explosionData.velocities[i];
+          positions.array[i3] += explosionData.directions[i3] * velocity * delta;
+          positions.array[i3 + 1] += explosionData.directions[i3 + 1] * velocity * delta;
+          positions.array[i3 + 2] += explosionData.directions[i3 + 2] * velocity * delta;
+          
+          // Apply friction
+          explosionData.velocities[i] *= 0.92;
+          
+          // Update lifetime
+          explosionData.lifetimes[i] -= delta;
+          const lifeRatio = explosionData.lifetimes[i] / 2.0;
+          
+          // Color transition: white -> yellow -> orange -> red -> dark
+          const fade = Math.max(0, lifeRatio);
+          const heat = fade * fade; // Squared for faster falloff
+          
+          if (fade > 0.7) {
+            // White to yellow
+            colors.array[i3] = 1;
+            colors.array[i3 + 1] = 1;
+            colors.array[i3 + 2] = fade;
+          } else if (fade > 0.4) {
+            // Yellow to orange
+            colors.array[i3] = 1;
+            colors.array[i3 + 1] = fade;
+            colors.array[i3 + 2] = 0;
+          } else {
+            // Orange to red to dark
+            colors.array[i3] = fade * 2.5;
+            colors.array[i3 + 1] = fade * 0.5;
+            colors.array[i3 + 2] = 0;
+          }
+          
+          // Expand then shrink
+          const sizeMultiplier = fade > 0.5 ? 1 + (1 - fade) : fade * 2;
+          sizes.array[i] = explosionData.sizes[i] * sizeMultiplier;
+        } else {
+          sizes.array[i] = 0;
+        }
+      }
+      
+      positions.needsUpdate = true;
+      colors.needsUpdate = true;
+      sizes.needsUpdate = true;
+    }
+    
+    // Update debris particles
+    if (debrisRef.current && debrisRef.current.attributes) {
+      const positions = debrisRef.current.attributes.position;
+      const colors = debrisRef.current.attributes.color;
+      const sizes = debrisRef.current.attributes.size;
+      
+      for (let i = 0; i < debrisData.count; i++) {
+        if (debrisData.lifetimes[i] > 0) {
+          const i3 = i * 3;
+          
+          // Update position
+          const velocity = debrisData.velocities[i];
+          positions.array[i3] += debrisData.directions[i3] * velocity * delta;
+          positions.array[i3 + 1] += debrisData.directions[i3 + 1] * velocity * delta;
+          positions.array[i3 + 2] += debrisData.directions[i3 + 2] * velocity * delta;
+          
+          // Apply gravity
+          debrisData.directions[i3 + 1] -= 15 * delta;
+          
+          // Apply friction
+          debrisData.velocities[i] *= 0.98;
+          
+          // Rotate debris
+          debrisData.rotations[i] += delta * 2;
+          
+          // Update lifetime
+          debrisData.lifetimes[i] -= delta;
+          const fade = Math.max(0, debrisData.lifetimes[i] / 3.0);
+          
+          // Darken over time
+          colors.array[i3] = 0.8 * fade;
+          colors.array[i3 + 1] = 0.7 * fade;
+          colors.array[i3 + 2] = 0.6 * fade;
+          
+          sizes.array[i] = debrisData.sizes[i] * fade;
+        } else {
+          sizes.array[i] = 0;
+        }
+      }
+      
+      positions.needsUpdate = true;
+      colors.needsUpdate = true;
+      sizes.needsUpdate = true;
+    }
+    
+    // Process new effects
     effects.forEach(effect => {
-      if (effect.type === 'hit' && !effect.processed) {
-        // Spawn impact sparks
-        spawnSparks(effect.position);
-        effect.processed = true;
-      } else if (effect.type === 'explosion' && !effect.processed) {
-        // Spawn explosion particles
-        spawnExplosion(effect.position);
-        effect.processed = true;
+      if (!processedEffects.current.has(effect.id)) {
+        if (effect.type === 'hit') {
+          spawnSparks(effect.position);
+          processedEffects.current.add(effect.id);
+        } else if (effect.type === 'explosion') {
+          spawnExplosion(effect.position);
+          spawnDebris(effect.position);
+          processedEffects.current.add(effect.id);
+        }
       }
     });
   });
   
   const spawnSparks = (position) => {
-    // Find available spark particles and activate them
     let spawned = 0;
-    for (let i = 0; i < sparkData.count && spawned < 15; i++) {
+    for (let i = 0; i < sparkData.count && spawned < 20; i++) {
       if (sparkData.lifetimes[i] <= 0) {
         const i3 = i * 3;
         
         // Set position
         sparkData.positions[i3] = position.x;
         sparkData.positions[i3 + 1] = position.y;
-        sparkData.positions[i3 + 2] = position.z;
+        sparkData.positions[i3 + 2] = position.z || 0;
         
-        // Reset velocity with random spread
-        sparkData.velocities[i] = (Math.random() - 0.5) * 25;
-        sparkData.velocities[i + 1] = (Math.random() - 0.5) * 25;
-        sparkData.velocities[i + 2] = (Math.random() - 0.5) * 20;
+        // Random direction in cone shape
+        const angle = Math.random() * Math.PI * 2;
+        const spread = Math.random() * 0.5 + 0.5;
+        sparkData.directions[i3] = Math.cos(angle) * spread;
+        sparkData.directions[i3 + 1] = Math.random() * 0.5 + 0.5; // Upward bias
+        sparkData.directions[i3 + 2] = Math.sin(angle) * spread;
+        
+        // Normalize direction
+        const length = Math.sqrt(
+          sparkData.directions[i3] * sparkData.directions[i3] +
+          sparkData.directions[i3 + 1] * sparkData.directions[i3 + 1] +
+          sparkData.directions[i3 + 2] * sparkData.directions[i3 + 2]
+        );
+        sparkData.directions[i3] /= length;
+        sparkData.directions[i3 + 1] /= length;
+        sparkData.directions[i3 + 2] /= length;
+        
+        // Set velocity
+        sparkData.velocities[i] = 15 + Math.random() * 15;
+        
+        // Set size
+        sparkData.sizes[i] = 0.5 + Math.random() * 1.0;
         
         // Set lifetime
-        sparkData.lifetimes[i] = 0.8 + Math.random() * 0.4; // 0.8-1.2 seconds
+        sparkData.lifetimes[i] = 0.5 + Math.random() * 0.5;
         
         spawned++;
       }
@@ -187,24 +335,75 @@ function ImpactEffects() {
   };
   
   const spawnExplosion = (position) => {
-    // Find available explosion particles and activate them
     let spawned = 0;
-    for (let i = 0; i < explosionData.count && spawned < 30; i++) {
+    for (let i = 0; i < explosionData.count && spawned < 40; i++) {
       if (explosionData.lifetimes[i] <= 0) {
         const i3 = i * 3;
         
-        // Set position
-        explosionData.positions[i3] = position.x;
-        explosionData.positions[i3 + 1] = position.y;
-        explosionData.positions[i3 + 2] = position.z;
+        // Set position with small random offset
+        explosionData.positions[i3] = position.x + (Math.random() - 0.5) * 0.5;
+        explosionData.positions[i3 + 1] = position.y + (Math.random() - 0.5) * 0.5;
+        explosionData.positions[i3 + 2] = (position.z || 0) + (Math.random() - 0.5) * 0.5;
         
-        // Reset velocity with random spread
-        explosionData.velocities[i] = (Math.random() - 0.5) * 35;
-        explosionData.velocities[i + 1] = (Math.random() - 0.5) * 35;
-        explosionData.velocities[i + 2] = (Math.random() - 0.5) * 30;
+        // Random spherical direction
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        explosionData.directions[i3] = Math.sin(phi) * Math.cos(theta);
+        explosionData.directions[i3 + 1] = Math.sin(phi) * Math.sin(theta);
+        explosionData.directions[i3 + 2] = Math.cos(phi);
+        
+        // Set velocity with variation
+        explosionData.velocities[i] = 8 + Math.random() * 20;
+        
+        // Set size
+        explosionData.sizes[i] = 1 + Math.random() * 2;
         
         // Set lifetime
-        explosionData.lifetimes[i] = 1.5 + Math.random() * 1.0; // 1.5-2.5 seconds
+        explosionData.lifetimes[i] = 1.0 + Math.random() * 1.0;
+        
+        spawned++;
+      }
+    }
+  };
+  
+  const spawnDebris = (position) => {
+    let spawned = 0;
+    for (let i = 0; i < debrisData.count && spawned < 8; i++) {
+      if (debrisData.lifetimes[i] <= 0) {
+        const i3 = i * 3;
+        
+        // Set position
+        debrisData.positions[i3] = position.x;
+        debrisData.positions[i3 + 1] = position.y;
+        debrisData.positions[i3 + 2] = position.z || 0;
+        
+        // Random direction with upward bias
+        const angle = Math.random() * Math.PI * 2;
+        debrisData.directions[i3] = Math.cos(angle) * 0.8;
+        debrisData.directions[i3 + 1] = 0.5 + Math.random() * 0.5;
+        debrisData.directions[i3 + 2] = Math.sin(angle) * 0.8;
+        
+        // Normalize
+        const length = Math.sqrt(
+          debrisData.directions[i3] * debrisData.directions[i3] +
+          debrisData.directions[i3 + 1] * debrisData.directions[i3 + 1] +
+          debrisData.directions[i3 + 2] * debrisData.directions[i3 + 2]
+        );
+        debrisData.directions[i3] /= length;
+        debrisData.directions[i3 + 1] /= length;
+        debrisData.directions[i3 + 2] /= length;
+        
+        // Set velocity
+        debrisData.velocities[i] = 5 + Math.random() * 10;
+        
+        // Set rotation speed
+        debrisData.rotations[i] = (Math.random() - 0.5) * 10;
+        
+        // Set size
+        debrisData.sizes[i] = 2 + Math.random() * 3;
+        
+        // Set lifetime
+        debrisData.lifetimes[i] = 2 + Math.random() * 1;
         
         spawned++;
       }
@@ -219,19 +418,19 @@ function ImpactEffects() {
           <bufferAttribute
             attach="attributes-position"
             count={sparkData.count}
-            array={new Float32Array(sparkData.positions)}
+            array={sparkData.positions}
             itemSize={3}
           />
           <bufferAttribute
             attach="attributes-color"
             count={sparkData.count}
-            array={new Float32Array(sparkData.colors)}
+            array={sparkData.colors}
             itemSize={3}
           />
           <bufferAttribute
             attach="attributes-size"
             count={sparkData.count}
-            array={new Float32Array(sparkData.sizes)}
+            array={sparkData.sizes}
             itemSize={1}
           />
         </bufferGeometry>
@@ -242,6 +441,7 @@ function ImpactEffects() {
           vertexColors
           sizeAttenuation
           blending={THREE.AdditiveBlending}
+          depthWrite={false}
         />
       </points>
       
@@ -251,29 +451,63 @@ function ImpactEffects() {
           <bufferAttribute
             attach="attributes-position"
             count={explosionData.count}
-            array={new Float32Array(explosionData.positions)}
+            array={explosionData.positions}
             itemSize={3}
           />
           <bufferAttribute
             attach="attributes-color"
             count={explosionData.count}
-            array={new Float32Array(explosionData.colors)}
+            array={explosionData.colors}
             itemSize={3}
           />
           <bufferAttribute
             attach="attributes-size"
             count={explosionData.count}
-            array={new Float32Array(explosionData.sizes)}
+            array={explosionData.sizes}
             itemSize={1}
           />
         </bufferGeometry>
         <pointsMaterial
-          size={3.0}
+          size={4.0}
           transparent
-          opacity={0.8}
+          opacity={0.85}
           vertexColors
           sizeAttenuation
           blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </points>
+      
+      {/* Debris Particles */}
+      <points>
+        <bufferGeometry ref={debrisRef}>
+          <bufferAttribute
+            attach="attributes-position"
+            count={debrisData.count}
+            array={debrisData.positions}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-color"
+            count={debrisData.count}
+            array={debrisData.colors}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-size"
+            count={debrisData.count}
+            array={debrisData.sizes}
+            itemSize={1}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          size={5.0}
+          transparent
+          opacity={0.7}
+          vertexColors
+          sizeAttenuation
+          blending={THREE.NormalBlending}
+          depthWrite={true}
         />
       </points>
     </>
