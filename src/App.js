@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import Game from './components/Game';
 import UI from './components/UI';
@@ -38,6 +38,12 @@ function App() {
   const gameState = useGameStore((state) => state.gameState);
   const showMenu = useGameStore((state) => state.showMenu);
   const gameMode = useGameStore((state) => state.gameMode);
+  const loadDebugPreferences = useGameStore((state) => state.loadDebugPreferences);
+  
+  // Load debug preferences on app start
+  useEffect(() => {
+    loadDebugPreferences();
+  }, [loadDebugPreferences]);
   
   console.log('Current game state:', gameState, 'Show menu:', showMenu, 'Game mode:', gameMode);
 

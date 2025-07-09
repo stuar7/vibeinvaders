@@ -5,7 +5,9 @@ const DebugControls = ({
   toggleDebugGamespaceBounds,
   toggleDebugElements,
   toggleDebugCollisionCircles,
-  toggleDebugBlasterCollisions
+  toggleDebugBlasterCollisions,
+  toggleDebugPerformanceMonitor,
+  toggleDebugEntities
 }) => {
   return (
     <div className="debug-controls">
@@ -27,7 +29,7 @@ const DebugControls = ({
           color: debug.showDebugElements ? '#000' : '#fff'
         }}
       >
-        {debug.showDebugElements ? 'Hide' : 'Show'} Debug
+        {debug.showDebugElements ? 'Hide' : 'Show'} Info
       </button>
       <button 
         className="debug-button"
@@ -48,6 +50,26 @@ const DebugControls = ({
         }}
       >
         {debug.showBlasterCollisions ? 'Hide' : 'Show'} Blaster
+      </button>
+      <button 
+        className="debug-button"
+        onClick={toggleDebugPerformanceMonitor}
+        style={{
+          background: debug.showPerformanceMonitor ? '#00ff00' : '#333',
+          color: debug.showPerformanceMonitor ? '#000' : '#fff'
+        }}
+      >
+        {debug.showPerformanceMonitor ? 'Hide' : 'Show'} Performance
+      </button>
+      <button 
+        className="debug-button"
+        onClick={toggleDebugEntities}
+        style={{
+          background: debug.showEntities ? '#00ff00' : '#333',
+          color: debug.showEntities ? '#000' : '#fff'
+        }}
+      >
+        {debug.showEntities ? 'Hide' : 'Show'} Entities
       </button>
     </div>
   );

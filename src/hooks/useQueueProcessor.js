@@ -19,15 +19,19 @@ export const useQueueProcessor = ({
       const queuedMissiles = [...missileQueueRef.current];
       missileQueueRef.current = [];
       
+      console.log(`[QUEUE DEBUG] Processing ${queuedMissiles.length} queued missiles`);
+      
       // Add all queued missiles to the store in a single batch update
       if (queuedMissiles.length > 0) {
         const currentMissiles = useGameStore.getState().missiles;
         const newMissiles = queuedMissiles.map(item => {
           // Handle both formats: direct missile objects and wrapped objects
           if (item.type === 'add' && item.missile) {
+            console.log(`[QUEUE DEBUG] Adding wrapped missile:`, item.missile);
             return item.missile;
           } else if (item.id && item.position && item.velocity) {
             // Direct missile object (charge weapons)
+            console.log(`[QUEUE DEBUG] Adding direct missile:`, item);
             return item;
           }
           console.warn('[QUEUE] Unknown missile format:', item);
@@ -35,6 +39,7 @@ export const useQueueProcessor = ({
         }).filter(Boolean);
         
         const updatedMissiles = [...currentMissiles, ...newMissiles];
+        console.log(`[QUEUE DEBUG] Updating store with ${updatedMissiles.length} total missiles (was ${currentMissiles.length})`);
         updateMissiles(updatedMissiles);
       }
     }

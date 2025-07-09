@@ -30,6 +30,19 @@ function Alien({ alien, isHighlighted = false }) {
     
     return baseColor;
   };
+
+  const getComponentColor = (component) => {
+    const baseColor = new THREE.Color(getAlienColor());
+    
+    if (alien.shipComponents && alien.shipComponents[component]) {
+      const hpRatio = alien.shipComponents[component].hp / alien.shipComponents[component].maxHp;
+      // Reduce brightness based on damage (0.3 = 30% minimum brightness)
+      const damageMultiplier = Math.max(0.3, hpRatio);
+      baseColor.multiplyScalar(damageMultiplier);
+    }
+    
+    return baseColor;
+  };
   
   
   const getAlienGeometry = () => {
@@ -90,48 +103,52 @@ function Alien({ alien, isHighlighted = false }) {
         {/* FUSELAGE_BODY: Main ship body */}
         <mesh position={[0, 0, 0]} name="fuselage">
           <boxGeometry args={[0.6, 0.4, 2.0]} />
-          <meshStandardMaterial color={getAlienColor()} />
+          <meshStandardMaterial color={getComponentColor('body')} />
         </mesh>
         
         {/* NOSE_CONE: Front cone */}
         <mesh position={[0, 0, -1.4]} rotation={[-Math.PI / 2, 0, 0]} name="nose">
           <coneGeometry args={[0.4, 0.8, 4]} />
-          <meshStandardMaterial color={getAlienColor()} />
+          <meshStandardMaterial color={getComponentColor('nose')} />
         </mesh>
         
         {/* LEFT_WING: Triangle extending left from fuselage */}
-        <mesh position={[-0.3, 0, 0]} name="leftWing">
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={3}
-              array={new Float32Array([
-                0, 0, -0.8,
-                -1.5, 0, 0.5,
-                0, 0, 0.8
-              ])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <meshStandardMaterial color={getAlienColor()} side={THREE.DoubleSide} />
-        </mesh>
+        {(!alien.shipComponents || !alien.shipComponents.leftWing?.destroyed) && (
+          <mesh position={[-0.3, 0, 0]} name="leftWing">
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={3}
+                array={new Float32Array([
+                  0, 0, -0.8,
+                  -1.5, 0, 0.5,
+                  0, 0, 0.8
+                ])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <meshStandardMaterial color={getComponentColor('leftWing')} side={THREE.DoubleSide} />
+          </mesh>
+        )}
         
         {/* RIGHT_WING: Triangle extending right from fuselage */}
-        <mesh position={[0.3, 0, 0]} name="rightWing">
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={3}
-              array={new Float32Array([
-                0, 0, -0.8,
-                1.5, 0, 0.5,
-                0, 0, 0.8
-              ])}
-              itemSize={3}
-            />
-          </bufferGeometry>
-          <meshStandardMaterial color={getAlienColor()} side={THREE.DoubleSide} />
-        </mesh>
+        {(!alien.shipComponents || !alien.shipComponents.rightWing?.destroyed) && (
+          <mesh position={[0.3, 0, 0]} name="rightWing">
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={3}
+                array={new Float32Array([
+                  0, 0, -0.8,
+                  1.5, 0, 0.5,
+                  0, 0, 0.8
+                ])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <meshStandardMaterial color={getComponentColor('rightWing')} side={THREE.DoubleSide} />
+          </mesh>
+        )}
       </group>
     );
   };
@@ -164,27 +181,34 @@ function Alien({ alien, isHighlighted = false }) {
         // const pulse = Math.sin(state.clock.elapsedTime * 8) * 0.1 + 1;
         // meshRef.current.scale.setScalar(pulse);
       } else {
-        // Combat position aliens - look at player with subtle movement overlay
-        
-        // Create lookAt rotation (aliens face player)
-        const lookAtMatrix = new THREE.Matrix4();
-        lookAtMatrix.lookAt(
-          new THREE.Vector3(position.x, position.y, position.z),
-          new THREE.Vector3(playerPosition.x, playerPosition.y, playerPosition.z),
-          new THREE.Vector3(0, 1, 0)
-        );
-        
-        // Extract rotation from matrix and apply
-        const lookAtQuaternion = new THREE.Quaternion();
-        lookAtQuaternion.setFromRotationMatrix(lookAtMatrix);
-        
-        // Add 180 degree rotation since aliens need to face forward (they're already rotated 180 in geometry)
-        const additionalRotation = new THREE.Quaternion();
-        additionalRotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Add 180 degree rotation to face player correctly
-        
-        // Apply the look-at rotation with 180 degree correction
-        meshRef.current.quaternion.copy(lookAtQuaternion);
-        meshRef.current.quaternion.multiply(additionalRotation);
+        // Combat position aliens - use enemy ship rotation if available
+        if (alien.enemyShip) {
+          // Use enemy ship's rotation for proper facing
+          const enemyRotation = alien.enemyShip.rotation;
+          meshRef.current.rotation.x = enemyRotation.x;
+          meshRef.current.rotation.y = enemyRotation.y + Math.PI; // Add 180 degree correction
+          meshRef.current.rotation.z = enemyRotation.z;
+        } else {
+          // Legacy behavior - look at player
+          const lookAtMatrix = new THREE.Matrix4();
+          lookAtMatrix.lookAt(
+            new THREE.Vector3(position.x, position.y, position.z),
+            new THREE.Vector3(playerPosition.x, playerPosition.y, playerPosition.z),
+            new THREE.Vector3(0, 1, 0)
+          );
+          
+          // Extract rotation from matrix and apply
+          const lookAtQuaternion = new THREE.Quaternion();
+          lookAtQuaternion.setFromRotationMatrix(lookAtMatrix);
+          
+          // Add 180 degree rotation since aliens need to face forward (they're already rotated 180 in geometry)
+          const additionalRotation = new THREE.Quaternion();
+          additionalRotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Add 180 degree rotation to face player correctly
+          
+          // Apply the look-at rotation with 180 degree correction
+          meshRef.current.quaternion.copy(lookAtQuaternion);
+          meshRef.current.quaternion.multiply(additionalRotation);
+        }
         
         // Type-specific behaviors without swaying
         switch (type) {

@@ -47,8 +47,8 @@ function AlienAIManager() {
             const dz = playerPosition.z - alien.position.z;
             const distanceToPlayer = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-            // Advanced AI behavior tree (CPU intensive)
-            if (distanceToPlayer < 20) {
+            // Advanced AI behavior tree (CPU intensive) - Increased aggro ranges
+            if (distanceToPlayer < 40) { // Increased from 20 to 40
               // Close combat: evasive maneuvers
               updates.newBehaviorState = 'evade';
               
@@ -57,7 +57,7 @@ function AlienAIManager() {
               updates.velocity.x += Math.cos(evasionAngle) * 2.0 * deltaTime;
               updates.velocity.y += Math.sin(evasionAngle) * 1.5 * deltaTime;
               
-            } else if (distanceToPlayer < 50) {
+            } else if (distanceToPlayer < 100) { // Increased from 50 to 100
               // Medium range: aggressive approach
               updates.newBehaviorState = 'attack';
               

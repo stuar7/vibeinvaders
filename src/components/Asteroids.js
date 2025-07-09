@@ -238,7 +238,7 @@ function Asteroids({ level = 1 }) {
     eventInterval: Infinity, // DISABLED: Special event every 60 seconds - was causing unwanted asteroid spawns
     lastEventType: null,
     doodadTimer: 0,
-    doodadInterval: 45 + Math.random() * 45 // Ultra massive doodads every 45-90 seconds
+    doodadInterval: 120 + Math.random() * 60 // Ultra massive doodads every 120-180 seconds (2-3 minutes)
   });
   
   const asteroids = useGameStore((state) => state.asteroids || []);
@@ -292,6 +292,7 @@ function Asteroids({ level = 1 }) {
     };
     
     console.log(`[ASTEROIDS] Spawning ${asteroidType} asteroid at position:`, spawnPosition);
+    console.log(`[ASTEROIDS] Asteroid spawn data:`, spawnData);
     
     // Use entity pool to spawn asteroid
     spawnAsteroid(asteroidType, spawnData);
@@ -490,10 +491,10 @@ function Asteroids({ level = 1 }) {
     spawnRef.current.doodadTimer += delta;
     
     // ALGORITHM LIMIT: Don't spawn doodads if at or above limit (they count towards the total)
-    if (spawnRef.current.doodadTimer >= spawnRef.current.doodadInterval && currentAsteroids.length < 30) {
+    if (spawnRef.current.doodadTimer >= spawnRef.current.doodadInterval && currentAsteroids.length < 15) {
       spawnDoodadAsteroid();
       spawnRef.current.doodadTimer = 0;
-      spawnRef.current.doodadInterval = 45 + Math.random() * 45; // Reset to new random interval
+      spawnRef.current.doodadInterval = 120 + Math.random() * 60; // Reset to new random interval (2-3 minutes)
     }
     
     // Special Event Timer (every 60 seconds)
@@ -524,10 +525,15 @@ function Asteroids({ level = 1 }) {
     // Regular asteroid spawning
     spawnRef.current.spawnTimer += delta;
     
-    // ALGORITHM LIMIT: Cap at 30 asteroids for this spawning system
+    // ALGORITHM LIMIT: Cap at 15 asteroids for this spawning system (reduced to prevent only massive spawns)
     // This limit only applies to the automatic spawning algorithm, not event-based waves
-    const asteroidSpawnLimit = 30;
+    const asteroidSpawnLimit = 15;
     const currentAsteroidCount = currentAsteroids.length;
+    
+    // Debug asteroid spawning
+    if (currentAsteroidCount === 0) {
+      console.log(`[ASTEROIDS] No asteroids present. Timer: ${spawnRef.current.spawnTimer.toFixed(2)}/${spawnRef.current.spawnInterval} seconds`);
+    }
     
     if (spawnRef.current.spawnTimer >= spawnRef.current.spawnInterval && currentAsteroidCount < asteroidSpawnLimit) {
       console.log(`[ASTEROIDS] Spawn timer triggered: ${currentAsteroidCount}/${asteroidSpawnLimit} asteroids`);
@@ -535,6 +541,7 @@ function Asteroids({ level = 1 }) {
       spawnAsteroidWithPool();
       spawnRef.current.spawnTimer = 0;
       spawnRef.current.spawnInterval = Math.max(3, 5 - level * 0.3); // Shorter intervals for more frequent spawning
+      console.log(`[ASTEROIDS] Reset spawn timer, next spawn in: ${spawnRef.current.spawnInterval} seconds`);
     }
     
     if (currentAsteroids.length === 0) {
@@ -603,6 +610,17 @@ function Asteroids({ level = 1 }) {
             return null; // Remove original asteroid after destroying alien
           }
         }
+      }
+      
+      // Remove asteroids that are too far away (culling)
+      const playerDx = newX - playerPosition.x;
+      const playerDy = newY - playerPosition.y; 
+      const playerDz = newZ - playerPosition.z;
+      const distanceFromPlayer = Math.sqrt(playerDx * playerDx + playerDy * playerDy + playerDz * playerDz);
+      
+      // Cull asteroids that are more than 300 units away from player
+      if (distanceFromPlayer > 300) {
+        return null; // Remove asteroid
       }
       
       return {

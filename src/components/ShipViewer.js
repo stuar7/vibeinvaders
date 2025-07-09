@@ -2,8 +2,10 @@ import React, { useRef, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboard } from '../hooks/useKeyboard';
+import { PlayerGeometry } from './player/PlayerGeometry';
+import { PLAYER_CONFIG } from './player/playerConfig';
 
-// Ship model component (same as in Player.js)
+// Ship display component using the actual PlayerGeometry
 function PlayerShip({ rotation = [0, 0, 0] }) {
   const meshRef = useRef();
   
@@ -14,89 +16,15 @@ function PlayerShip({ rotation = [0, 0, 0] }) {
     }
   });
   
-  const getPlayerColor = () => '#00ffff'; // Cyan for player ship
+  // Use default player power-ups for ship viewer (no special effects)
+  const defaultPowerUps = {
+    shield: false,
+    stealth: false
+  };
   
   return (
-    <group ref={meshRef} rotation={rotation}>
-      {/* FUSELAGE_BODY: Main ship body */}
-      <mesh position={[0, 0, 0]} name="fuselage">
-        <boxGeometry args={[0.6, 0.4, 2.0]} />
-        <meshStandardMaterial color={getPlayerColor()} />
-      </mesh>
-      
-      {/* NOSE_CONE: Front cone at NEGATIVE Z */}
-      <mesh position={[0, 0, -1.4]} rotation={[-Math.PI / 2, 0, 0]} name="nose">
-        <coneGeometry args={[0.4, 0.8, 4]} />
-        <meshStandardMaterial color={getPlayerColor()} />
-      </mesh>
-      
-      {/* LEFT_WING - Made thicker for better visibility */}
-      <mesh position={[-0.3, 0, 0]} name="leftWing">
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={6}
-            array={new Float32Array([
-              // Top triangle
-              0, 0.05, -0.8,
-              -1.5, 0.05, 0.0,
-              0, 0.05, 0.8,
-              // Bottom triangle
-              0, -0.05, -0.8,
-              -1.5, -0.05, 0.0,
-              0, -0.05, 0.8
-            ])}
-            itemSize={3}
-          />
-          <bufferAttribute
-            attach="attributes-normal"
-            count={6}
-            array={new Float32Array([
-              0, 1, 0, 0, 1, 0, 0, 1, 0,  // Top normals
-              0, -1, 0, 0, -1, 0, 0, -1, 0  // Bottom normals
-            ])}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <meshStandardMaterial 
-          color={getPlayerColor()} 
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      
-      {/* RIGHT_WING - Made thicker for better visibility */}
-      <mesh position={[0.3, 0, 0]} name="rightWing">
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={6}
-            array={new Float32Array([
-              // Top triangle
-              0, 0.05, -0.8,
-              1.5, 0.05, 0.0,
-              0, 0.05, 0.8,
-              // Bottom triangle
-              0, -0.05, -0.8,
-              1.5, -0.05, 0.0,
-              0, -0.05, 0.8
-            ])}
-            itemSize={3}
-          />
-          <bufferAttribute
-            attach="attributes-normal"
-            count={6}
-            array={new Float32Array([
-              0, 1, 0, 0, 1, 0, 0, 1, 0,  // Top normals
-              0, -1, 0, 0, -1, 0, 0, -1, 0  // Bottom normals
-            ])}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <meshStandardMaterial 
-          color={getPlayerColor()} 
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+    <group ref={meshRef} rotation={rotation} scale={PLAYER_CONFIG.playerScale}>
+      <PlayerGeometry playerPowerUps={defaultPowerUps} />
     </group>
   );
 }

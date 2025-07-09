@@ -176,6 +176,36 @@ class EntityPool {
     };
   }
 
+  createShipComponents(entityType) {
+    // Map different alien types to appropriate component health values
+    // Component HP is designed so that the lowest critical component (body/nose) HP matches original health
+    const componentHealthMap = {
+      // Scout: original health = 2, so lowest critical component should be 2
+      alien_scout: { body: 2, nose: 2, leftWing: 1, rightWing: 1 },
+      
+      // Armored: original health = 4, so lowest critical component should be 4  
+      alien_armored: { body: 4, nose: 4, leftWing: 2, rightWing: 2 },
+      
+      // Elite: original health = 6, so lowest critical component should be 6
+      alien_elite: { body: 6, nose: 6, leftWing: 3, rightWing: 3 },
+      
+      // Boss: original health = 50, so lowest critical component should be 50
+      alien_boss: { body: 50, nose: 50, leftWing: 25, rightWing: 25 },
+      
+      // Flying: original health = 6, so lowest critical component should be 6
+      alien_flying: { body: 6, nose: 6, leftWing: 3, rightWing: 3 }
+    };
+
+    const componentHealth = componentHealthMap[entityType] || componentHealthMap.alien_scout;
+    
+    return {
+      body: { maxHp: componentHealth.body, hp: componentHealth.body, destroyed: false },
+      nose: { maxHp: componentHealth.nose, hp: componentHealth.nose, destroyed: false },
+      leftWing: { maxHp: componentHealth.leftWing, hp: componentHealth.leftWing, destroyed: false },
+      rightWing: { maxHp: componentHealth.rightWing, hp: componentHealth.rightWing, destroyed: false }
+    };
+  }
+
   createPooledEntity(entityType) {
     const template = this.entityTemplates[entityType];
     if (!template) {
@@ -208,7 +238,8 @@ class EntityPool {
         combatDistance: -40.5,
         lastFireTime: 0,
         targetPlayer: null,
-        formation: null
+        formation: null,
+        shipComponents: this.createShipComponents(entityType)
       }),
       
       // Asteroid-specific properties
@@ -315,6 +346,8 @@ class EntityPool {
       entity.lastFireTime = 0;
       entity.targetPlayer = null;
       entity.formation = null;
+      // Reset ship components
+      entity.shipComponents = this.createShipComponents(entity.entityType);
     }
     
     // Reset asteroid-specific state

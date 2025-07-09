@@ -16,11 +16,13 @@ import PowerUps from './PowerUps';
 import Effects from './Effects';
 import Background from './Background';
 import Asteroids from './Asteroids';
+import SimpleAsteroids from './SimpleAsteroids';
 import ParticleDust from './ParticleDust';
 import Ground from './Ground';
 import GamespaceBoundary from './GamespaceBoundary';
 import EngineTrails from './EngineTrails';
 import ImpactEffects from './ImpactEffects';
+import ShipDebris from './ShipDebris';
 import Wingmen from './Wingman';
 import TargetingCursor from './TargetingCursor';
 import FreeFlightCrosshair from './FreeFlightCrosshair';
@@ -90,6 +92,8 @@ function Game() {
   const setShiftBoosting = useGameStore((state) => state.setShiftBoosting);
   const setShiftBoostCooldown = useGameStore((state) => state.setShiftBoostCooldown);
   const toggleZoom = useGameStore((state) => state.toggleZoom);
+  const setBraking = useGameStore((state) => state.setBraking);
+  const setBoosting = useGameStore((state) => state.setBoosting);
   
   const keys = useKeyboard();
   const { pointer, camera } = useThree();
@@ -299,14 +303,14 @@ function Game() {
     }
   }, [keys.KeyG, grantAllWeapons]);
   
-  // Brake and boost controls - TEMPORARILY DISABLED
-  /*useEffect(() => {
+  // Brake and boost controls
+  useEffect(() => {
     setBraking(keys.KeyB);
   }, [keys.KeyB, setBraking]);
   
   useEffect(() => {
     setBoosting(keys.KeyQ);
-  }, [keys.KeyQ, setBoosting]);*/
+  }, [keys.KeyQ, setBoosting]);
   
   // Re-enabled useFrame for player movement and game logic
   useFrame((state, delta) => {
@@ -428,11 +432,11 @@ function Game() {
     }
   });
 
-  // Staggered cleanup system for free flight mode - TEMPORARILY DISABLED
-  /*useEffect(() => {
-    if (gameMode !== 'freeflight' || gameState !== 'playing') return;
+  // Enhanced cleanup system for both game modes
+  useEffect(() => {
+    if (gameState !== 'playing') return;
 
-    // Missile cleanup every 30 seconds
+    // Missile cleanup every 15 seconds (more frequent)
     const missileCleanupInterval = setInterval(() => {
       const currentMissiles = useGameStore.getState().missiles;
       const cleanedMissiles = currentMissiles.filter(missile => {
@@ -442,14 +446,22 @@ function Game() {
         const dy = missile.position.y - gamespaceCenter.y;
         const dz = missile.position.z - gamespaceCenter.z;
         const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        return distance <= 5000; // Remove missiles >5000 units away from gamespace center
+        
+        // Different cleanup distances for different game modes
+        const maxDistance = gameMode === 'freeflight' ? 5000 : 2000;
+        return distance <= maxDistance;
       });
+      
+      // Also clean up weapon pool missiles that might be orphaned
+      if (weaponMeshPool && weaponMeshPool.cleanup) {
+        weaponMeshPool.cleanup();
+      }
       
       if (cleanedMissiles.length !== currentMissiles.length) {
         console.log(`🧹 Missile cleanup: Removed ${currentMissiles.length - cleanedMissiles.length} distant missiles`);
         useGameStore.getState().updateMissiles(cleanedMissiles);
       }
-    }, 30000); // Every 30 seconds
+    }, 15000); // Every 15 seconds
 
     // Enemy ship cleanup 10 seconds after missiles, then every 30 seconds
     const enemyCleanupInterval = setInterval(() => {
@@ -532,7 +544,7 @@ function Game() {
       clearTimeout(enemyCleanupTimeout);
       clearTimeout(asteroidCleanupTimeout);
     };
-  }, [gameMode, gameState]);*/
+  }, [gameMode, gameState]);
   
   if (gameState === 'startup' || gameState === 'gameOver' || gameState === 'gameWon' || gameState === 'loading') {
     return null;
@@ -547,12 +559,13 @@ function Game() {
       <Player />
       {/* TEMPORARILY DISABLED TO DEBUG INFINITE RENDER LOOP */}
       <AlienWave level={level} difficultyMultiplier={difficultyMultiplier} />
-      <Asteroids level={level} />
+      {gameMode === 'freeflight' ? <SimpleAsteroids /> : <Asteroids level={level} />}
       <OptimizedMissiles />
       <PowerUps />
       <Effects />
       {/* <EngineTrails /> */}
       <ImpactEffects />
+      <ShipDebris />
       <Wingmen />
       <TargetingCursor />
       <FreeFlightCrosshair />

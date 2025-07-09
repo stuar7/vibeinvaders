@@ -11,6 +11,14 @@ function SimpleMissileBatch({ missiles }) {
   const meshRefs = useRef(new Map());
   const showCollisionCircles = useGameStore((state) => state.debug.showCollisionCircles);
   const showBlasterCollisions = useGameStore((state) => state.debug.showBlasterCollisions);
+  
+  // Debug logging for simple missile rendering
+  useEffect(() => {
+    console.log(`[SIMPLE MISSILE DEBUG] Rendering ${missiles.length} simple missiles`);
+    if (missiles.length > 0) {
+      console.log(`[SIMPLE MISSILE DEBUG] Missile IDs:`, missiles.map(m => m.id));
+    }
+  }, [missiles.length]);
 
   // Single useFrame for ALL simple missiles (massive performance improvement)
   useFrame(() => {
@@ -127,6 +135,14 @@ function OptimizedMissiles() {
   const sceneInitialized = useRef(false);
   const failedPoolRef = useRef(new Set()); // Track missiles that failed pool acquisition
   
+  // Debug logging for missile count
+  useEffect(() => {
+    console.log(`[OPTIMIZED MISSILES DEBUG] Total missiles in store: ${missiles.length}`);
+    if (missiles.length > 0) {
+      console.log(`[OPTIMIZED MISSILES DEBUG] Missile types:`, missiles.map(m => m.weaponType || 'default'));
+    }
+  }, [missiles.length]);
+  
   // Optimized pooled mesh management - only handle add/remove in useEffect
   const prevMissilesRef = useRef(new Map());
   
@@ -134,7 +150,13 @@ function OptimizedMissiles() {
   useEffect(() => {
     if (!sceneInitialized.current && scene && camera && gl) {
       console.log('[OPTIMIZED MISSILES] Initializing weapon pool with scene...');
+      console.log('[OPTIMIZED MISSILES DEBUG] Scene object:', scene);
+      console.log('[OPTIMIZED MISSILES DEBUG] WeaponMeshPool isInitialized:', weaponMeshPool.isInitialized);
+      
       weaponMeshPool.initializeScene(scene);
+      
+      console.log('[OPTIMIZED MISSILES DEBUG] After initialization - isInitialized:', weaponMeshPool.isInitialized);
+      console.log('[OPTIMIZED MISSILES DEBUG] Pool stats:', weaponMeshPool.getStats());
       
       // GPU shader pre-compilation to prevent first-rocket lag
       console.log('[OPTIMIZED MISSILES] Starting GPU shader pre-compilation...');
@@ -274,6 +296,14 @@ function OptimizedMissiles() {
         simple.push(missile);
       }
     });
+    
+    console.log(`[OPTIMIZED MISSILES DEBUG] Missile grouping - pooled: ${pooled.length}, simple: ${simple.length}`);
+    if (pooled.length > 0) {
+      console.log(`[OPTIMIZED MISSILES DEBUG] Pooled missile types:`, pooled.map(m => m.weaponType));
+    }
+    if (simple.length > 0) {
+      console.log(`[OPTIMIZED MISSILES DEBUG] Simple missile types:`, simple.map(m => m.weaponType || 'default'));
+    }
     
     return { pooledMissiles: pooled, simpleMissiles: simple };
   }, [missiles]);

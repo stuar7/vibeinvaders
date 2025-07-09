@@ -67,29 +67,32 @@ function OffScreenTargetIndicator() {
       indicatorY = (indicatorY / distance) * circleRadius;
     }
     
-    // Convert screen coordinates back to world space at a fixed distance from camera
-    const indicatorDistance = 20; // Distance from camera
-    const indicatorWorldPos = new THREE.Vector3(indicatorX, indicatorY, 0.5).unproject(camera);
+    // Simple approach: place indicator in world space relative to camera
+    const indicatorDistance = 25; // Distance from camera
     const cameraDirection = new THREE.Vector3();
     camera.getWorldDirection(cameraDirection);
-    const finalPos = camera.position.clone().add(cameraDirection.multiplyScalar(indicatorDistance));
     
-    // Adjust for screen position
+    // Get camera's right and up vectors
     const rightVector = new THREE.Vector3(1, 0, 0).transformDirection(camera.matrixWorld);
     const upVector = new THREE.Vector3(0, 1, 0).transformDirection(camera.matrixWorld);
     
-    finalPos.add(rightVector.multiplyScalar(indicatorX * indicatorDistance * 0.5));
-    finalPos.add(upVector.multiplyScalar(indicatorY * indicatorDistance * 0.5));
+    // Position indicator in front of camera at screen edge
+    const basePos = camera.position.clone().add(cameraDirection.multiplyScalar(indicatorDistance));
+    const finalPos = basePos.add(
+      rightVector.clone().multiplyScalar(indicatorX * indicatorDistance * 0.5)
+    ).add(
+      upVector.clone().multiplyScalar(indicatorY * indicatorDistance * 0.5)
+    );
     
     meshRef.current.position.copy(finalPos);
     
     // Make the indicator face the camera (billboard effect)
     meshRef.current.lookAt(camera.position);
     
-    // Calculate rotation to point toward target (only around local Z axis)
+    // Calculate rotation to point toward edge of screen (outward direction)
     const angle = Math.atan2(indicatorY, indicatorX);
-    // Apply additional rotation around the forward axis to point the triangle
-    meshRef.current.rotateZ(angle - Math.PI / 2); // Adjust for chevron orientation
+    // Reset rotation and apply only the outward-pointing rotation
+    meshRef.current.rotation.z = angle - Math.PI / 2; // Point triangle outward
     
     // Scale based on distance to maintain consistent size
     const scale = indicatorDistance * 0.02;

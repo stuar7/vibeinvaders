@@ -276,9 +276,9 @@ export const useWeaponSystem = ({
             missileData = {
               ...missileData,
               velocity: {
-                x: velocityDirection.x * 150,
-                y: velocityDirection.y * 150,
-                z: velocityDirection.z * 150
+                x: velocityDirection.x * 165,
+                y: velocityDirection.y * 165,
+                z: velocityDirection.z * 165
               },
               size: 0.3,
               color: '#ffffff',
@@ -288,8 +288,11 @@ export const useWeaponSystem = ({
         
         // For complex weapons (rockets, bfg, bombs, railguns), use the pool directly
         if (['rocket', 'bfg', 'bomb', 'railgun'].includes(weaponType)) {
+          console.log(`[MISSILE DEBUG] Attempting to fire ${weaponType} with data:`, missileData);
           const mesh = weaponMeshPool.acquireLiveMissile(weaponType, missileData);
           if (mesh) {
+            console.log(`[MISSILE DEBUG] Successfully acquired ${weaponType} mesh:`, mesh);
+            console.log(`[MISSILE DEBUG] Mesh visibility: ${mesh.visible}, position:`, mesh.position);
             // Play weapon sound for complex weapons since they bypass the store
             soundManager.playWeaponSound(weaponType, {
               pitchVariation: 0.1
@@ -301,6 +304,7 @@ export const useWeaponSystem = ({
           }
         } else {
           // For simple weapons, still use the old system temporarily
+          console.log(`[MISSILE DEBUG] Creating simple ${weaponType} missile:`, missileData);
           // Sound will be handled by useGameSounds hook when missile is added to store
           return missileData;
         }

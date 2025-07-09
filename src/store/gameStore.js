@@ -18,12 +18,23 @@ const initialState = {
   playerVelocity: { x: 0, y: 0, z: 0 }, // Star Fox 64-style momentum
   playerRotation: { x: 0, y: 0, z: 0 }, // Ship rotation for missile alignment
   playerRotationalVelocity: { x: 0, y: 0, z: 0 }, // Angular velocity for Q/E rotation tracking
+  playerShipComponents: {
+    body: { maxHp: 3, hp: 3, destroyed: false },
+    nose: { maxHp: 3, hp: 3, destroyed: false },
+    leftWing: { maxHp: 2, hp: 2, destroyed: false },
+    rightWing: { maxHp: 2, hp: 2, destroyed: false }
+  },
+  playerShipStatus: {
+    erraticMovement: false,
+    turningSpeedMultiplier: 1.0
+  },
   aliens: [],
   missiles: [],
   powerUps: [],
   effects: [],
   asteroids: [],
   wingmen: [],
+  debris: [], // Ship debris from destroyed aliens
   playerPowerUps: {
     shield: false,
     rapidFire: false,
@@ -53,13 +64,13 @@ const initialState = {
   weapons: {
     current: 'default',
     default: { type: 'default', ammo: Infinity, maxAmmo: Infinity, level: 1 },
-    laser: { type: 'laser', ammo: 0, maxAmmo: 100, level: 1 },
-    chaingun: { type: 'chaingun', ammo: 0, maxAmmo: 2500, level: 1 },
-    bfg: { type: 'bfg', ammo: 0, maxAmmo: 3, level: 1 },
-    rocket: { type: 'rocket', ammo: 0, maxAmmo: 20, level: 1 },
+    laser: { type: 'laser', ammo: 100, maxAmmo: 100, level: 1 },
+    chaingun: { type: 'chaingun', ammo: 2500, maxAmmo: 2500, level: 1 },
+    bfg: { type: 'bfg', ammo: 3, maxAmmo: 3, level: 1 },
+    rocket: { type: 'rocket', ammo: 20, maxAmmo: 20, level: 1 },
     charge: { type: 'charge', ammo: Infinity, maxAmmo: Infinity, level: 1 },
-    bomb: { type: 'bomb', ammo: 0, maxAmmo: 5, level: 1 },
-    railgun: { type: 'railgun', ammo: 0, maxAmmo: 8, level: 1 },
+    bomb: { type: 'bomb', ammo: 5, maxAmmo: 5, level: 1 },
+    railgun: { type: 'railgun', ammo: 8, maxAmmo: 8, level: 1 },
   },
   chargeWeapon: {
     isCharging: false,
@@ -80,6 +91,8 @@ const initialState = {
     showDebugElements: true,
     showCollisionCircles: false,
     showBlasterCollisions: false,
+    showPerformanceMonitor: false,
+    showEntities: false,
   },
   
   // Performance settings
@@ -96,6 +109,14 @@ const initialState = {
     mouseSensitivity: 1.04, // Current sensitivity value
     invertedMouse: false, // Y-axis inversion
     fov: 75, // Default field of view
+    debugPreferences: {
+      showGamespaceBounds: false,
+      showDebugElements: true,
+      showCollisionCircles: false,
+      showBlasterCollisions: false,
+      showPerformanceMonitor: false,
+      showEntities: false,
+    },
   },
   
   // Zoom state
@@ -258,9 +279,87 @@ export const useGameStore = create((set, get) => ({
     aliens: [...state.aliens, alien],
   })),
   
-  removeAlien: (id) => set((state) => ({
-    aliens: state.aliens.filter((alien) => alien.id !== id),
-  })),
+  removeAlien: (id) => set((state) => {
+    // Find the alien being removed
+    const alienToRemove = state.aliens.find((alien) => alien.id === id);
+    
+    let newDebris = [...state.debris];
+    
+    // Create debris if alien exists
+    if (alienToRemove) {
+      const debrisComponents = [];
+      const baseId = `debris-${alienToRemove.id}-${Date.now()}`;
+      const explosionForce = 8 + Math.random() * 12; // 8-20 units/sec
+      
+      // Determine component types based on alien type
+      const componentTypes = alienToRemove.type === 5 ? 
+        ['saucerDisc', 'saucerDome', 'saucerHull', 'saucerEngine'] :
+        ['fuselage', 'nose', 'leftWing', 'rightWing'];
+      
+      // Get alien color
+      const alienColor = (() => {
+        switch (alienToRemove.type) {
+          case 1: return '#ff0000';
+          case 2: return '#0080ff';
+          case 3: return '#00ff00';
+          case 4: return '#ff00ff';
+          case 5: return '#888888';
+          default: return '#ffffff';
+        }
+      })();
+      
+      componentTypes.forEach((componentType, index) => {
+        // Calculate explosion direction (outward from center)
+        const angle = (index / componentTypes.length) * Math.PI * 2;
+        const explosionDirection = {
+          x: Math.cos(angle) + (Math.random() - 0.5) * 0.5,
+          y: (Math.random() - 0.5) * 0.8,
+          z: (Math.random() - 0.5) * 0.3
+        };
+        
+        // Normalize and apply force
+        const magnitude = Math.sqrt(
+          explosionDirection.x * explosionDirection.x +
+          explosionDirection.y * explosionDirection.y +
+          explosionDirection.z * explosionDirection.z
+        );
+        
+        const normalizedDirection = {
+          x: explosionDirection.x / magnitude,
+          y: explosionDirection.y / magnitude,
+          z: explosionDirection.z / magnitude
+        };
+        
+        const debris = {
+          id: `${baseId}-${index}`,
+          componentType: componentType,
+          originalColor: alienColor,
+          position: { ...alienToRemove.position },
+          velocity: {
+            x: normalizedDirection.x * explosionForce,
+            y: normalizedDirection.y * explosionForce,
+            z: normalizedDirection.z * explosionForce + (alienToRemove.velocity?.z || 0)
+          },
+          rotationSpeed: {
+            x: (Math.random() - 0.5) * 10,
+            y: (Math.random() - 0.5) * 10,
+            z: (Math.random() - 0.5) * 10
+          },
+          lifetime: 3 + Math.random() * 2, // 3-5 seconds
+          spawnTime: Date.now()
+        };
+        
+        debrisComponents.push(debris);
+      });
+      
+      newDebris = [...state.debris, ...debrisComponents];
+    }
+    
+    return {
+      aliens: state.aliens.filter((alien) => alien.id !== id),
+      debris: newDebris
+    };
+  }),
   
   updateAliens: (aliens) => set({ aliens }),
   
@@ -440,23 +539,245 @@ export const useGameStore = create((set, get) => ({
     };
   }),
 
+  damageShipComponent: (component, damage = 1) => set((state) => {
+    const currentComponent = state.playerShipComponents[component];
+    if (!currentComponent || currentComponent.destroyed) {
+      return state; // Component already destroyed or doesn't exist
+    }
+    
+    const newHp = Math.max(0, currentComponent.hp - damage);
+    const isDestroyed = newHp === 0;
+    
+    const newComponents = {
+      ...state.playerShipComponents,
+      [component]: {
+        ...currentComponent,
+        hp: newHp,
+        destroyed: isDestroyed
+      }
+    };
+    
+    // Check unified hull HP (based on lowest critical component)
+    const unifiedHP = state.getUnifiedHP(newComponents);
+    
+    // Check if critical components (body or nose) are destroyed OR hull reaches 0
+    const bodyDestroyed = newComponents.body.destroyed;
+    const noseDestroyed = newComponents.nose.destroyed;
+    const hullEmpty = unifiedHP.current <= 0;
+    
+    if (bodyDestroyed || noseDestroyed || hullEmpty) {
+      // Player dies - unlock mouse and trigger game over
+      if (document.exitPointerLock) {
+        document.exitPointerLock();
+      }
+      document.body.style.cursor = 'auto';
+      
+      const newLives = state.lives - 1;
+      const newGameState = newLives <= 0 ? 'gameOver' : 'playing';
+      
+      return {
+        ...state,
+        playerShipComponents: newComponents,
+        lives: newLives,
+        gameState: newGameState
+      };
+    }
+    
+    // Check if both wings are destroyed for erratic movement
+    const leftWingDestroyed = newComponents.leftWing.destroyed;
+    const rightWingDestroyed = newComponents.rightWing.destroyed;
+    const bothWingsDestroyed = leftWingDestroyed && rightWingDestroyed;
+    const anyWingDestroyed = leftWingDestroyed || rightWingDestroyed;
+    
+    const newShipStatus = {
+      erraticMovement: anyWingDestroyed,
+      turningSpeedMultiplier: anyWingDestroyed ? 0.5 : 1.0
+    };
+    
+    return {
+      ...state,
+      playerShipComponents: newComponents,
+      playerShipStatus: newShipStatus
+    };
+  }),
+
+  repairShipComponent: (component, amount = 1) => set((state) => {
+    const currentComponent = state.playerShipComponents[component];
+    if (!currentComponent) {
+      return state; // Component doesn't exist
+    }
+    
+    const newHp = Math.min(currentComponent.maxHp, currentComponent.hp + amount);
+    const isDestroyed = newHp === 0;
+    
+    const newComponents = {
+      ...state.playerShipComponents,
+      [component]: {
+        ...currentComponent,
+        hp: newHp,
+        destroyed: isDestroyed
+      }
+    };
+    
+    // Update ship status based on wing state
+    const leftWingDestroyed = newComponents.leftWing.destroyed;
+    const rightWingDestroyed = newComponents.rightWing.destroyed;
+    const anyWingDestroyed = leftWingDestroyed || rightWingDestroyed;
+    
+    const newShipStatus = {
+      erraticMovement: anyWingDestroyed,
+      turningSpeedMultiplier: anyWingDestroyed ? 0.5 : 1.0
+    };
+    
+    return {
+      ...state,
+      playerShipComponents: newComponents,
+      playerShipStatus: newShipStatus
+    };
+  }),
+
+  resetShipComponents: () => set((state) => ({
+    playerShipComponents: {
+      body: { maxHp: 3, hp: 3, destroyed: false },
+      nose: { maxHp: 3, hp: 3, destroyed: false },
+      leftWing: { maxHp: 2, hp: 2, destroyed: false },
+      rightWing: { maxHp: 2, hp: 2, destroyed: false }
+    },
+    playerShipStatus: {
+      erraticMovement: false,
+      turningSpeedMultiplier: 1.0
+    }
+  })),
+
+  damageAlienShipComponent: (alienId, component, damage = 1) => set((state) => {
+    const newAliens = state.aliens.map(alien => {
+      if (alien.id !== alienId) return alien;
+      
+      if (!alien.shipComponents || !alien.shipComponents[component]) {
+        return alien; // Component doesn't exist or alien doesn't have ship components
+      }
+      
+      const currentComponent = alien.shipComponents[component];
+      if (currentComponent.destroyed) {
+        return alien; // Component already destroyed
+      }
+      
+      const newHp = Math.max(0, currentComponent.hp - damage);
+      const isDestroyed = newHp === 0;
+      
+      const newShipComponents = {
+        ...alien.shipComponents,
+        [component]: {
+          ...currentComponent,
+          hp: newHp,
+          destroyed: isDestroyed
+        }
+      };
+      
+      // Check if critical components (body or nose) are destroyed
+      const bodyDestroyed = newShipComponents.body.destroyed;
+      const noseDestroyed = newShipComponents.nose.destroyed;
+      
+      if (bodyDestroyed || noseDestroyed) {
+        // Alien dies - return null to be filtered out
+        return null;
+      }
+      
+      return {
+        ...alien,
+        shipComponents: newShipComponents
+      };
+    }).filter(alien => alien !== null); // Remove destroyed aliens
+    
+    return {
+      ...state,
+      aliens: newAliens
+    };
+  }),
+
+  // Calculate unified HP based on lowest critical component (body/nose)
+  getUnifiedHP: (shipComponents) => {
+    if (!shipComponents || !shipComponents.body || !shipComponents.nose) {
+      return { current: 0, max: 0 };
+    }
+    
+    const bodyHp = shipComponents.body.hp;
+    const noseHp = shipComponents.nose.hp;
+    const bodyMaxHp = shipComponents.body.maxHp;
+    const noseMaxHp = shipComponents.nose.maxHp;
+    
+    // Find the component with the lowest current HP
+    const lowestCurrent = Math.min(bodyHp, noseHp);
+    
+    // Find the max HP of the component that has the lowest current HP
+    const lowestMax = bodyHp <= noseHp ? bodyMaxHp : noseMaxHp;
+    
+    return { current: lowestCurrent, max: lowestMax };
+  },
+
+  // Get unified HP for player
+  getPlayerUnifiedHP: () => {
+    const state = useGameStore.getState();
+    return state.getUnifiedHP(state.playerShipComponents);
+  },
+
+  // Get unified HP for an alien
+  getAlienUnifiedHP: (alienId) => {
+    const state = useGameStore.getState();
+    const alien = state.aliens.find(a => a.id === alienId);
+    if (!alien) return { current: 0, max: 0 };
+    return state.getUnifiedHP(alien.shipComponents);
+  },
+
   setPlayerSpeed: (speed) => set({ playerSpeed: speed }),
 
-  toggleDebugGamespaceBounds: () => set((state) => ({
-    debug: { ...state.debug, showGamespaceBounds: !state.debug.showGamespaceBounds }
-  })),
+  toggleDebugGamespaceBounds: () => set((state) => {
+    const newValue = !state.debug.showGamespaceBounds;
+    return {
+      debug: { ...state.debug, showGamespaceBounds: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showGamespaceBounds: newValue } }
+    };
+  }),
 
-  toggleDebugElements: () => set((state) => ({
-    debug: { ...state.debug, showDebugElements: !state.debug.showDebugElements }
-  })),
+  toggleDebugElements: () => set((state) => {
+    const newValue = !state.debug.showDebugElements;
+    return {
+      debug: { ...state.debug, showDebugElements: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showDebugElements: newValue } }
+    };
+  }),
 
-  toggleDebugCollisionCircles: () => set((state) => ({
-    debug: { ...state.debug, showCollisionCircles: !state.debug.showCollisionCircles }
-  })),
+  toggleDebugCollisionCircles: () => set((state) => {
+    const newValue = !state.debug.showCollisionCircles;
+    return {
+      debug: { ...state.debug, showCollisionCircles: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showCollisionCircles: newValue } }
+    };
+  }),
 
-  toggleDebugBlasterCollisions: () => set((state) => ({
-    debug: { ...state.debug, showBlasterCollisions: !state.debug.showBlasterCollisions }
-  })),
+  toggleDebugBlasterCollisions: () => set((state) => {
+    const newValue = !state.debug.showBlasterCollisions;
+    return {
+      debug: { ...state.debug, showBlasterCollisions: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showBlasterCollisions: newValue } }
+    };
+  }),
+
+  toggleDebugPerformanceMonitor: () => set((state) => {
+    const newValue = !state.debug.showPerformanceMonitor;
+    return {
+      debug: { ...state.debug, showPerformanceMonitor: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showPerformanceMonitor: newValue } }
+    };
+  }),
+
+  toggleDebugEntities: () => set((state) => {
+    const newValue = !state.debug.showEntities;
+    return {
+      debug: { ...state.debug, showEntities: newValue },
+      options: { ...state.options, debugPreferences: { ...state.options.debugPreferences, showEntities: newValue } }
+    };
+  }),
 
   toggleCursorAiming: () => set((state) => ({
     cursorAiming: !state.cursorAiming
@@ -876,5 +1197,24 @@ export const useGameStore = create((set, get) => ({
         [componentName]: time
       }
     }
+  })),
+
+  // Load debug preferences from options
+  loadDebugPreferences: () => set((state) => ({
+    debug: {
+      ...state.debug,
+      ...state.options.debugPreferences
+    }
+  })),
+
+  // Debris management functions
+  addDebris: (debris) => set((state) => ({
+    debris: [...state.debris, debris],
+  })),
+
+  updateDebris: (debris) => set({ debris }),
+
+  removeDebris: (id) => set((state) => ({
+    debris: state.debris.filter((debrisItem) => debrisItem.id !== id),
   })),
 }));

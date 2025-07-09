@@ -14,6 +14,8 @@ import {
   // Game HUD
   ScoreDisplay,
   LivesDisplay,
+  ShipHPDisplay,
+  TopRightHullDisplay,
   UIInteractionIndicator,
   
   // Targeting
@@ -115,6 +117,8 @@ function UI() {
   const toggleDebugElements = useGameStore((state) => state.toggleDebugElements);
   const toggleDebugCollisionCircles = useGameStore((state) => state.toggleDebugCollisionCircles);
   const toggleDebugBlasterCollisions = useGameStore((state) => state.toggleDebugBlasterCollisions);
+  const toggleDebugPerformanceMonitor = useGameStore((state) => state.toggleDebugPerformanceMonitor);
+  const toggleDebugEntities = useGameStore((state) => state.toggleDebugEntities);
   
   const keys = useKeyboard();
   
@@ -186,7 +190,7 @@ function UI() {
             level={level}
             elapsedTime={elapsedTime}
           />
-          <LivesDisplay lives={lives} />
+          <TopRightHullDisplay />
           <PowerUpTimers />
           <WeaponDisplay />
           <DefensiveDisplay />
@@ -266,6 +270,8 @@ function UI() {
             toggleDebugElements={toggleDebugElements}
             toggleDebugCollisionCircles={toggleDebugCollisionCircles}
             toggleDebugBlasterCollisions={toggleDebugBlasterCollisions}
+            toggleDebugPerformanceMonitor={toggleDebugPerformanceMonitor}
+            toggleDebugEntities={toggleDebugEntities}
           />
         </>
       )}

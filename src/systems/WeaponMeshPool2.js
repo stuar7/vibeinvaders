@@ -96,25 +96,32 @@ class WeaponMeshPool {
   // Initialize scene and add all pooled meshes to it (call this from OptimizedMissiles)
   initializeScene(scene) {
     if (this.isInitialized || !scene) {
+      console.log('[WEAPON POOL DEBUG] Scene initialization skipped - isInitialized:', this.isInitialized, 'scene:', !!scene);
       return;
     }
     
     console.log('[WEAPON POOL] Initializing scene with pooled meshes...');
+    console.log('[WEAPON POOL DEBUG] Scene object:', scene);
+    console.log('[WEAPON POOL DEBUG] Pool configurations:', this.poolConfigs);
     this.scene = scene;
     
     // Add all pooled meshes to scene and pre-warm GPU compilation
     this.pools.forEach((pool, weaponType) => {
+      console.log(`[WEAPON POOL DEBUG] Processing ${weaponType} pool with ${pool.available.length} meshes`);
       pool.available.forEach((mesh, index) => {
+        console.log(`[WEAPON POOL DEBUG] Adding ${weaponType} mesh ${index} to scene:`, mesh);
         scene.add(mesh);
         
         // Pre-warm GPU by briefly making first mesh visible (forces shader compilation)
         if (index === 0) {
           mesh.visible = true;
           mesh.position.set(9999, 9999, 9999); // Off-screen position
+          console.log(`[WEAPON POOL DEBUG] Pre-warming ${weaponType} mesh ${index} - visible: ${mesh.visible}, position:`, mesh.position);
           // Will be hidden again immediately after render
           setTimeout(() => {
             mesh.visible = false;
             mesh.position.set(0, 0, 0);
+            console.log(`[WEAPON POOL DEBUG] Reset ${weaponType} mesh ${index} - visible: ${mesh.visible}, position:`, mesh.position);
           }, 100);
         } else {
           mesh.visible = false;
@@ -125,6 +132,7 @@ class WeaponMeshPool {
     
     this.isInitialized = true;
     console.log('[WEAPON POOL] Scene initialization complete - meshes pre-added');
+    console.log('[WEAPON POOL DEBUG] Final scene children count:', scene.children.length);
   }
 
   async enableAsyncAssets() {
@@ -553,19 +561,22 @@ class WeaponMeshPool {
       return null;
     }
     
+    console.log(`[WEAPON POOL DEBUG] Acquiring ${weaponType} for missile ${missileId}`);
+    console.log(`[WEAPON POOL DEBUG] Pool state - available: ${pool.available.length}, active: ${pool.active.size}`);
+    
     // Check if we have available meshes - NO DYNAMIC EXPANSION to prevent lag spikes
     if (pool.available.length === 0) {
-      // Pool exhausted - return null without logging (logging causes lag during rapid fire)
+      console.warn(`[WEAPON POOL] ${weaponType} pool exhausted! Available: ${pool.available.length}, Active: ${pool.active.size}`);
       return null; // Return null instead of blocking main thread with mesh creation
     }
     
-    // Removed debug logging to eliminate firing lag
-    
     // Get mesh from pool
     const mesh = pool.available.pop();
+    console.log(`[WEAPON POOL DEBUG] Got mesh from pool:`, mesh);
     
     // Set mesh visible immediately - deferring broke firing
     mesh.visible = true;
+    console.log(`[WEAPON POOL DEBUG] Set mesh visible to true, checking visibility: ${mesh.visible}`);
     
     mesh.userData.missileId = missileId;
     mesh.userData.poolWeaponType = weaponType; // CRITICAL: Store weapon type for O(1) release
@@ -578,10 +589,9 @@ class WeaponMeshPool {
     // Invalidate stats cache since pool state changed
     this.cachedStats = null;
     
-    // Debug logging removed to prevent firing lag
-    // Rocket acquisition tracking disabled for performance
-    
     this.poolConfigs[weaponType].activeCount++;
+    
+    console.log(`[WEAPON POOL DEBUG] Pool state after acquisition - available: ${pool.available.length}, active: ${pool.active.size}`);
     
     return mesh;
   }

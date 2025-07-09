@@ -6,7 +6,7 @@ import OptionsMenu from './OptionsMenu';
 import ShipViewer from './ShipViewer';
 
 function MainMenu() {
-  const [selectedOption, setSelectedOption] = useState(0); // 0 = Linear Campaign, 1 = Free Flight, 2 = Ship Viewer, 3 = Options
+  const [selectedOption, setSelectedOption] = useState(0); // 0 = Free Flight, 1 = Linear Campaign, 2 = Ship Viewer, 3 = Options
   const [showOptions, setShowOptions] = useState(false);
   const [showShipViewer, setShowShipViewer] = useState(false);
   const keys = useKeyboard();
@@ -15,24 +15,24 @@ function MainMenu() {
   const { playHover, playSelect } = useUISounds();
   
   const menuOptions = [
-    { title: 'Linear Campaign', description: 'Play through structured levels with increasing difficulty' },
-    { title: 'Free Flight', description: 'Unlimited exploration with no boundaries or objectives' },
-    { title: 'Ship Viewer', description: 'View your ship from multiple angles' },
-    { title: 'Options', description: 'Configure game settings and controls' }
+    { title: 'Free Flight', description: 'Unlimited exploration with no boundaries or objectives', featured: true },
+    { title: 'Linear Campaign', description: 'Play through structured levels with increasing difficulty', featured: false },
+    { title: 'Ship Viewer', description: 'View your ship from multiple angles', featured: false },
+    { title: 'Options', description: 'Configure game settings and controls', featured: false }
   ];
 
   // Define functions first
   const handleSelection = useCallback((optionIndex = selectedOption) => {
     playSelect(); // Play selection sound
     if (optionIndex === 0) {
-      // Linear Campaign
-      console.log('[MENU] Setting game mode to: campaign');
-      setGameMode('campaign');
-      startGame();
-    } else if (optionIndex === 1) {
       // Free Flight
       console.log('[MENU] Setting game mode to: freeflight');
       setGameMode('freeflight');
+      startGame();
+    } else if (optionIndex === 1) {
+      // Linear Campaign
+      console.log('[MENU] Setting game mode to: campaign');
+      setGameMode('campaign');
       startGame();
     } else if (optionIndex === 2) {
       // Ship Viewer
@@ -51,7 +51,7 @@ function MainMenu() {
 
   // Handle navigation
   useEffect(() => {
-    // A key or Left Arrow - select Linear Campaign
+    // A key or Left Arrow - select Free Flight
     if (keys.KeyA || keys.ArrowLeft) {
       if (selectedOption !== 0) playHover();
       setSelectedOption(0);
@@ -59,7 +59,7 @@ function MainMenu() {
   }, [keys.KeyA, keys.ArrowLeft, selectedOption, playHover]);
 
   useEffect(() => {
-    // B key or Right Arrow - select Free Flight  
+    // B key or Right Arrow - select Linear Campaign  
     if (keys.KeyB || keys.ArrowRight) {
       if (selectedOption !== 1) playHover();
       setSelectedOption(1);
@@ -127,11 +127,12 @@ function MainMenu() {
 
       {/* Menu Options */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
         gap: '2rem',
         marginBottom: '3rem',
-        maxWidth: '800px'
+        maxWidth: '900px'
       }}>
         {menuOptions.map((option, index) => (
           <div
@@ -144,26 +145,29 @@ function MainMenu() {
               }
             }}
             style={{
-              padding: '2rem',
-              minWidth: '250px',
+              padding: option.featured ? '3rem' : '1.5rem',
+              width: option.featured ? '600px' : '400px',
               textAlign: 'center',
               border: selectedOption === index ? '3px solid #00ffff' : '2px solid #444',
-              borderRadius: '10px',
+              borderRadius: '15px',
               background: selectedOption === index ? 'rgba(0, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.3)',
               cursor: 'pointer',
               transition: 'all 0.3s ease',
-              boxShadow: selectedOption === index ? '0 0 30px rgba(0, 255, 255, 0.5)' : 'none'
+              boxShadow: selectedOption === index ? '0 0 30px rgba(0, 255, 255, 0.5)' : option.featured ? '0 0 20px rgba(0, 255, 255, 0.3)' : 'none',
+              transform: option.featured ? 'scale(1.1)' : 'scale(1)',
+              marginBottom: option.featured ? '1rem' : '0'
             }}
           >
             <h2 style={{
-              fontSize: '2rem',
+              fontSize: option.featured ? '2.5rem' : '1.5rem',
               marginBottom: '1rem',
-              color: selectedOption === index ? '#00ffff' : '#ffffff'
+              color: selectedOption === index ? '#00ffff' : '#ffffff',
+              textShadow: option.featured ? '0 0 10px #00ffff' : 'none'
             }}>
               {option.title}
             </h2>
             <p style={{
-              fontSize: '1rem',
+              fontSize: option.featured ? '1.2rem' : '0.9rem',
               opacity: 0.8,
               lineHeight: '1.5'
             }}>

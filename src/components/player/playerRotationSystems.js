@@ -7,7 +7,8 @@ export const applyFreeFlightRotation = ({
   virtualJoystickLocal, 
   rotationDamping, 
   setRotationDamping, 
-  delta 
+  delta,
+  turningSpeedMultiplier = 1.0 
 }) => {
   if (!isPointerLocked) {
     // Non-locked mode: use limited rotation based on pointer position
@@ -30,7 +31,7 @@ export const applyFreeFlightRotation = ({
   const normalizedMagnitude = Math.min(inputMagnitude / maxRadius, 1.0);
   
   // Convert joystick position to world-space rotation rates
-  const maxRotationRate = PLAYER_CONFIG.maxRotationRate * delta;
+  const maxRotationRate = PLAYER_CONFIG.maxRotationRate * delta * turningSpeedMultiplier;
   let rotationRate = normalizedMagnitude * maxRotationRate;
   
   // Check if we're in dead zone
@@ -234,22 +235,22 @@ export const applyCursorAimingRotation = ({ meshRef, pointer, camera, dummy, del
   }
 };
 
-export const applyStarFoxBanking = ({ meshRef, keys, playerVelocity, playerPowerUps, elapsedTime }) => {
+export const applyStarFoxBanking = ({ meshRef, keys, playerVelocity, playerPowerUps, elapsedTime, turningSpeedMultiplier = 1.0 }) => {
   // Banking based on velocity, not just input
   let bankAngle = -playerVelocity.x * PLAYER_CONFIG.bankingFactor;
   let pitchAngle = playerVelocity.y * PLAYER_CONFIG.pitchingFactor;
   
   // Additional banking based on input for responsiveness
   if (keys.ArrowLeft || keys.KeyA) {
-    bankAngle += 0.25;
+    bankAngle += 0.25 * turningSpeedMultiplier;
   } else if (keys.ArrowRight || keys.KeyD) {
-    bankAngle -= 0.25;
+    bankAngle -= 0.25 * turningSpeedMultiplier;
   }
   
   if (keys.ArrowUp || keys.KeyW) {
-    pitchAngle -= 0.15;
+    pitchAngle -= 0.15 * turningSpeedMultiplier;
   } else if (keys.ArrowDown || keys.KeyS) {
-    pitchAngle += 0.15;
+    pitchAngle += 0.15 * turningSpeedMultiplier;
   }
   
   // Clamp angles

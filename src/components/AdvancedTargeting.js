@@ -71,7 +71,11 @@ function AdvancedTargeting() {
   
   // ORANGE DIAMOND: Enhanced Physics with Velocity Inheritance & Firing Delay
   const calculateAimPointOrange = (target, missileSpeed, camera) => {
-    if (!target || !target.velocity) return null;
+    // Get target data from enemy ship or legacy alien structure
+    const targetPosition = target.enemyShip ? target.enemyShip.position : target.position;
+    const targetVelocity = target.enemyShip ? target.enemyShip.velocity : target.velocity;
+    
+    if (!targetPosition || !targetVelocity) return null;
     
     // Enhanced Configuration
     const config = {
@@ -80,9 +84,8 @@ function AdvancedTargeting() {
       missileSpawnOffset: { x: 0, y: 0, z: -3 }
     };
     
-    // Target's current position and velocity
-    const targetPos = new Vector3(target.position.x, target.position.y, target.position.z);
-    const targetVel = new Vector3(target.velocity.x, target.velocity.y, target.velocity.z);
+    const targetPos = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+    const targetVel = new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z);
     const playerVel = new Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
     
     // Enhanced missile spawn calculation with firing delay compensation
@@ -185,7 +188,11 @@ function AdvancedTargeting() {
   
   // PURPLE DIAMOND: Iterative Refinement with Velocity Inheritance
   const calculateAimPointPurple = (target, missileSpeed, camera) => {
-    if (!target || !target.velocity) return null;
+    // Get target data from enemy ship or legacy alien structure
+    const targetPosition = target.enemyShip ? target.enemyShip.position : target.position;
+    const targetVelocity = target.enemyShip ? target.enemyShip.velocity : target.velocity;
+    
+    if (!targetPosition || !targetVelocity) return null;
     
     // Iterative Configuration
     const config = {
@@ -195,8 +202,8 @@ function AdvancedTargeting() {
       missileSpawnOffset: { x: 0, y: 0, z: -3 }
     };
     
-    const targetPos = new Vector3(target.position.x, target.position.y, target.position.z);
-    const targetVel = new Vector3(target.velocity.x, target.velocity.y, target.velocity.z);
+    const targetPos = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+    const targetVel = new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z);
     const playerVel = new Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
     
     // Calculate enhanced shooter position
@@ -283,7 +290,11 @@ function AdvancedTargeting() {
   
   // YELLOW DIAMOND: High-Speed Optimized with Velocity-Based Compensation
   const calculateAimPointYellow = (target, missileSpeed, camera) => {
-    if (!target || !target.velocity) return null;
+    // Get target data from enemy ship or legacy alien structure
+    const targetPosition = target.enemyShip ? target.enemyShip.position : target.position;
+    const targetVelocity = target.enemyShip ? target.enemyShip.velocity : target.velocity;
+    
+    if (!targetPosition || !targetVelocity) return null;
     
     // High-Speed Optimization Configuration
     const config = {
@@ -294,8 +305,8 @@ function AdvancedTargeting() {
       missileSpawnOffset: { x: 0, y: 0, z: -3 }
     };
     
-    const targetPos = new Vector3(target.position.x, target.position.y, target.position.z);
-    const targetVel = new Vector3(target.velocity.x, target.velocity.y, target.velocity.z);
+    const targetPos = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+    const targetVel = new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z);
     const playerVel = new Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
     
     // Calculate combined speed for high-speed detection
@@ -412,7 +423,11 @@ function AdvancedTargeting() {
   
   // CYAN DIAMOND: Iterative High-Precision with Adaptive Refinement
   const calculateAimPointCyan = (target, missileSpeed, camera) => {
-    if (!target || !target.velocity) return null;
+    // Get target data from enemy ship or legacy alien structure
+    const targetPosition = target.enemyShip ? target.enemyShip.position : target.position;
+    const targetVelocity = target.enemyShip ? target.enemyShip.velocity : target.velocity;
+    
+    if (!targetPosition || !targetVelocity) return null;
     
     // Iterative High-Precision Configuration
     const config = {
@@ -423,8 +438,8 @@ function AdvancedTargeting() {
       missileSpawnOffset: { x: 0, y: 0, z: -3 }
     };
     
-    const targetPos = new Vector3(target.position.x, target.position.y, target.position.z);
-    const targetVel = new Vector3(target.velocity.x, target.velocity.y, target.velocity.z);
+    const targetPos = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+    const targetVel = new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z);
     const playerVel = new Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
     
     // Calculate scenario complexity for adaptive iterations
@@ -531,7 +546,11 @@ function AdvancedTargeting() {
 
   // BLUE DIAMOND: Alternative Physics Model with Camera-Based Calculation
   const calculateAimPointBlue = (target, missileSpeed, camera) => {
-    if (!target || !target.velocity) return null;
+    // Get target data from enemy ship or legacy alien structure
+    const targetPosition = target.enemyShip ? target.enemyShip.position : target.position;
+    const targetVelocity = target.enemyShip ? target.enemyShip.velocity : target.velocity;
+    
+    if (!targetPosition || !targetVelocity) return null;
     
     // Alternative Physics Configuration
     const config = {
@@ -542,8 +561,8 @@ function AdvancedTargeting() {
       missileSpawnOffset: { x: 0, y: 0, z: -2.5 } // Slightly different offset
     };
     
-    const targetPos = new Vector3(target.position.x, target.position.y, target.position.z);
-    const targetVel = new Vector3(target.velocity.x, target.velocity.y, target.velocity.z);
+    const targetPos = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+    const targetVel = new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z);
     const playerVel = new Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
     
     // Calculate shooter position using alternative method
@@ -701,34 +720,130 @@ function AdvancedTargeting() {
     }
   };
   
-  // Find targets near screen center or cycle through all targets
+  // Find targets prioritizing camera field of view (what user sees)
   const findTargets = () => {
-    const validTargets = aliens.filter(alien => 
-      alien && 
-      !alien.isSpawning && 
-      alien.health > 0 &&
-      alien.position.z < playerPosition.z // Only targets in front
-    );
+    const validTargets = aliens.filter(alien => {
+      // Check if alien has enemy ship instance
+      if (alien.enemyShip) {
+        return alien.enemyShip && 
+               !alien.enemyShip.isSpawning && 
+               alien.enemyShip.health > 0 &&
+               alien.enemyShip.position.z < playerPosition.z; // Only targets in front
+      }
+      // Legacy alien structure
+      return alien && 
+             !alien.isSpawning && 
+             alien.health > 0 &&
+             alien.position.z < playerPosition.z; // Only targets in front
+    });
     
-    // Calculate screen positions for all targets
-    const targetsWithScreenPos = validTargets.map(alien => {
-      const worldPos = new Vector3(alien.position.x, alien.position.y, alien.position.z);
+    // Calculate targeting data for all targets based on camera view
+    const targetsWithData = validTargets.map(alien => {
+      // Get position from enemy ship or legacy alien structure
+      const alienPosition = alien.enemyShip ? alien.enemyShip.position : alien.position;
+      const worldPos = new Vector3(alienPosition.x, alienPosition.y, alienPosition.z);
+      const playerPos = new Vector3(playerPosition.x, playerPosition.y, playerPosition.z);
       const screenPos = worldPos.clone().project(camera);
       
-      const distance = worldPos.distanceTo(new Vector3(playerPosition.x, playerPosition.y, playerPosition.z));
+      const distance = worldPos.distanceTo(playerPos);
+      
+      // Check if target is in front of camera (behind camera has positive Z in camera space)
+      const targetCameraSpace = worldPos.clone().applyMatrix4(camera.matrixWorldInverse);
+      const isInFront = targetCameraSpace.z < 0;
+      
+      // Screen distance from center (0,0 is screen center)
+      const screenDistance = Math.sqrt(screenPos.x * screenPos.x + screenPos.y * screenPos.y);
+      
+      // Calculate field of view zones based on screen position
+      const isDirectlyAhead = screenDistance < 0.1; // Very close to screen center
+      const isInCenterCone = screenDistance < 0.3; // Within 30% of screen from center
+      const isInViewCone = screenDistance < 0.6; // Within 60% of screen from center (roughly 60-degree cone)
+      const isOnScreen = isInFront && screenPos.x >= -1 && screenPos.x <= 1 && screenPos.y >= -1 && screenPos.y <= 1;
       
       return {
         alien,
         screenPos,
         distance,
-        screenDistance: Math.sqrt(screenPos.x * screenPos.x + screenPos.y * screenPos.y)
+        screenDistance,
+        isInFront,
+        isDirectlyAhead,
+        isInCenterCone,
+        isInViewCone,
+        isOnScreen
       };
     });
     
-    // Sort by distance from screen center
-    targetsWithScreenPos.sort((a, b) => a.screenDistance - b.screenDistance);
+    // Sort targets by priority based on camera field of view:
+    // 1. Targets directly in camera center (screen distance < 0.1) - sorted by distance
+    // 2. Targets in center cone (screen distance < 0.3) - sorted by screen distance, then distance
+    // 3. Targets in view cone (screen distance < 0.6) - sorted by screen distance, then distance
+    // 4. Targets on screen but outside cone - sorted by screen distance
+    // 5. Targets behind camera or off-screen - sorted by distance
+    targetsWithData.sort((a, b) => {
+      // Priority 1: Directly ahead in camera center
+      if (a.isDirectlyAhead && !b.isDirectlyAhead) return -1;
+      if (!a.isDirectlyAhead && b.isDirectlyAhead) return 1;
+      if (a.isDirectlyAhead && b.isDirectlyAhead) {
+        return a.distance - b.distance; // Closest first
+      }
+      
+      // Priority 2: In center cone
+      if (a.isInCenterCone && !b.isInCenterCone) return -1;
+      if (!a.isInCenterCone && b.isInCenterCone) return 1;
+      if (a.isInCenterCone && b.isInCenterCone) {
+        // Both in center cone - prioritize by screen distance (closer to crosshair), then distance
+        const screenDiff = a.screenDistance - b.screenDistance;
+        if (Math.abs(screenDiff) > 0.05) { // 5% screen tolerance
+          return screenDiff;
+        }
+        return a.distance - b.distance;
+      }
+      
+      // Priority 3: In view cone
+      if (a.isInViewCone && !b.isInViewCone) return -1;
+      if (!a.isInViewCone && b.isInViewCone) return 1;
+      if (a.isInViewCone && b.isInViewCone) {
+        // Both in view cone - prioritize by screen distance, then distance
+        const screenDiff = a.screenDistance - b.screenDistance;
+        if (Math.abs(screenDiff) > 0.1) { // 10% screen tolerance
+          return screenDiff;
+        }
+        return a.distance - b.distance;
+      }
+      
+      // Priority 4: On screen but outside cone
+      if (a.isOnScreen && !b.isOnScreen) return -1;
+      if (!a.isOnScreen && b.isOnScreen) return 1;
+      if (a.isOnScreen && b.isOnScreen) {
+        return a.screenDistance - b.screenDistance; // Closer to screen center first
+      }
+      
+      // Priority 5: Off-screen or behind camera - sort by distance
+      return a.distance - b.distance;
+    });
     
-    return targetsWithScreenPos;
+    // Filter to only include targets that are visible in viewport
+    const visibleTargets = targetsWithData.filter(target => {
+      // Must be in front of camera (not behind)
+      if (!target.isInFront) return false;
+      
+      // Must be on screen (within viewport bounds)
+      if (!target.isOnScreen) return false;
+      
+      // Additional safety check - ensure the target is within reasonable screen bounds
+      const screenX = target.screenPos.x;
+      const screenY = target.screenPos.y;
+      const screenZ = target.screenPos.z;
+      
+      // Screen coordinates should be between -1 and 1, and Z should be between -1 and 1
+      const isWithinBounds = screenX >= -1 && screenX <= 1 && 
+                            screenY >= -1 && screenY <= 1 && 
+                            screenZ >= -1 && screenZ <= 1;
+      
+      return isWithinBounds;
+    });
+    
+    return visibleTargets;
   };
   
   // Handle T key for cycling targeting modes and Esc for closing validation
@@ -744,7 +859,7 @@ function AdvancedTargeting() {
             // Enable targeting with blue mode (default)
             setTargetingEnabled(true);
             setTargetingMode('blue');
-            enableLiveTargetingStats();
+            // enableLiveTargetingStats(); // Disabled
             console.log('[TARGETING] Advanced targeting enabled - Blue mode');
           } else {
             // Cycle through modes: blue -> yellow -> cyan -> disable
@@ -795,12 +910,17 @@ function AdvancedTargeting() {
   
   // Handle TAB key for target cycling and V key for validation
   useEffect(() => {
-    if (!targetingEnabled) return;
-    
     const handleKeyDown = (e) => {
       if (e.key === 'Tab' && !tabPressedRef.current) {
         e.preventDefault();
         tabPressedRef.current = true;
+        
+        // If targeting is not enabled, enable it first
+        if (!targetingEnabled) {
+          setTargetingEnabled(true);
+          setTargetingMode('blue');
+          console.log('[TARGETING] Tab key enabled targeting system');
+        }
         
         const targets = findTargets();
         if (targets.length === 0) {
@@ -922,16 +1042,27 @@ function AdvancedTargeting() {
     };
   }, [autoFireTargeting.enabled, targetingEnabled]);
   
-  // Update selected target if it dies or moves out of range
+  // Update selected target if it dies or moves out of range (300% increased range for selected target)
   useEffect(() => {
     if (selectedTarget) {
       const target = aliens.find(a => a.id === selectedTarget.id);
       if (!target || target.health <= 0) {
         setSelectedTarget(null);
         setTargetLock(false);
+      } else {
+        // Check if selected target is still within extended range (800 units)
+        const distance = Math.sqrt(
+          Math.pow(target.position.x - playerPosition.x, 2) +
+          Math.pow(target.position.y - playerPosition.y, 2) +
+          Math.pow(target.position.z - playerPosition.z, 2)
+        );
+        if (distance > 800) { // 300% increased range (200 * 4 = 800)
+          setSelectedTarget(null);
+          setTargetLock(false);
+        }
       }
     }
-  }, [aliens, selectedTarget]);
+  }, [aliens, selectedTarget, playerPosition]);
   
   // Calculate prediction for selected target
   const prediction = useMemo(() => {
@@ -1114,7 +1245,7 @@ function AdvancedTargeting() {
   const nearbyTargets = useMemo(() => {
     if (!targetingEnabled) return [];
     return findTargets()
-      .filter(t => t.screenDistance < 0.3 && t.distance < 200)
+      .filter(t => t.screenDistance < 0.3 && t.distance < 400) // Increased range by 100%
       .slice(0, 5); // Limit to 5 nearest targets
   }, [aliens, playerPosition, camera, targetingEnabled]);
   
@@ -1266,27 +1397,15 @@ function AdvancedTargeting() {
                     />
                   </mesh>
                   
-                  {/* Diamond-shaped aim indicator */}
+                  {/* Diamond-shaped aim indicator - 10% larger, 25% more transparent */}
                   <mesh rotation={[0, 0, Math.PI / 4]}>
-                    <boxGeometry args={[1.8, 1.8, 0.1]} />
+                    <boxGeometry args={[1.98, 1.98, 0.1]} />
                     <meshBasicMaterial 
                       color={getCrosshairColor()}
                       wireframe
                       transparent
-                      opacity={0.5}
+                      opacity={0.375}
                       linewidth={3}
-                    />
-                  </mesh>
-                  
-                  {/* Inner diamond */}
-                  <mesh rotation={[0, 0, Math.PI / 4]}>
-                    <boxGeometry args={[1, 1, 0.1]} />
-                    <meshBasicMaterial 
-                      color={getCrosshairColor()}
-                      wireframe
-                      transparent
-                      opacity={0.4}
-                      linewidth={2}
                     />
                   </mesh>
                   

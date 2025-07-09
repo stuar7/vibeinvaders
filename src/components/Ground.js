@@ -32,6 +32,8 @@ function Ground({
   const isBoosting = useGameStore((state) => state.isBoosting);
   
   const [visibleIndices, setVisibleIndices] = useState([]);
+  const [showMeteors, setShowMeteors] = useState(false);
+  const ubiquitousAsteroidRotationsRef = useRef(new Map());
   
   // Generate a naturally curving path through space
   const asteroidPath = useMemo(() => {
@@ -246,8 +248,26 @@ function Ground({
     return geometry;
   }, []);
   
-  // Create nebula particle system
+  // Delay meteor shower by 10 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowMeteors(true);
+    }, 10000); // 10 seconds
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // Create nebula particle system with individual particle tracking for shooting
   const nebulaParticles = useMemo(() => {
+    if (!showMeteors) {
+      // Return empty geometry if meteors shouldn't show yet
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3));
+      geometry.setAttribute('size', new THREE.BufferAttribute(new Float32Array(0), 1));
+      geometry.meteorObjects = [];
+      return geometry;
+    }
     const particleCount = 4000;
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
@@ -255,12 +275,15 @@ function Ground({
     
     const curvePoints = asteroidPath.getSpacedPoints(100);
     
+    // Track individual meteors for collision detection
+    const meteorObjects = [];
+    
     for (let i = 0; i < particleCount; i++) {
       // Distribute particles around curve
       const t = Math.random();
       const point = asteroidPath.getPointAt(t);
       
-      const radius = 450 + Math.random() * 500;
+      const radius = 1350 + Math.random() * 1500; // 300% larger volume (450*3 = 1350, 500*3 = 1500)
       const angle = Math.random() * Math.PI * 2;
       const angleY = (Math.random() - 0.5) * Math.PI;
       
@@ -275,6 +298,14 @@ function Ground({
       colors[i * 3 + 2] = intensity * 0.9 + (Math.random() > 0.95 ? 0.05 : 0);
 
       sizes[i] = Math.random() * 30 + 120;
+      
+      // Store meteor data for collision detection
+      meteorObjects.push({
+        id: i,
+        position: new THREE.Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]),
+        size: sizes[i] / 30, // Convert to collision radius
+        alive: true
+      });
     }
     
     const geometry = new THREE.BufferGeometry();
@@ -282,8 +313,71 @@ function Ground({
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     
+    // Attach meteor objects to geometry for collision detection
+    geometry.meteorObjects = meteorObjects;
+    
     return geometry;
-  }, [asteroidPath]);
+  }, [asteroidPath, showMeteors]);
+  
+  // Create ubiquitous asteroid system (stationary, spread out 30x, some rotating)
+  const ubiquitousAsteroids = useMemo(() => {
+    const asteroidCount = 3000;
+    const positions = new Float32Array(asteroidCount * 3);
+    const colors = new Float32Array(asteroidCount * 3);
+    const sizes = new Float32Array(asteroidCount);
+    
+    // Track individual asteroids for collision detection and rotation
+    const asteroidObjects = [];
+    
+    for (let i = 0; i < asteroidCount; i++) {
+      // Spread out 30 times more than meteors (ubiquitous distribution)
+      const spreadRadius = (1350 + Math.random() * 1500) * 30; // 30x spread
+      const angle = Math.random() * Math.PI * 2;
+      const angleY = (Math.random() - 0.5) * Math.PI;
+      
+      // Random position in 3D space (not following path)
+      positions[i * 3] = (Math.random() - 0.5) * spreadRadius;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * spreadRadius;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * spreadRadius;
+      
+      // Asteroid-like colors - gray to brown tones
+      const intensity = 0.3 + Math.random() * 0.4;
+      colors[i * 3] = intensity * 0.6 + Math.random() * 0.1; // Red component
+      colors[i * 3 + 1] = intensity * 0.5 + Math.random() * 0.1; // Green component  
+      colors[i * 3 + 2] = intensity * 0.4 + Math.random() * 0.1; // Blue component
+      
+      // Varied sizes for asteroids
+      sizes[i] = Math.random() * 80 + 40;
+      
+      // Determine if this asteroid rotates (10% chance)
+      const shouldRotate = Math.random() < 0.1;
+      
+      // Store asteroid data for collision detection and rotation
+      asteroidObjects.push({
+        id: i,
+        position: new THREE.Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]),
+        size: sizes[i] / 30, // Convert to collision radius
+        alive: true,
+        shouldRotate: shouldRotate,
+        rotationSpeed: shouldRotate ? (Math.random() * 0.5 + 0.1) : 0, // Random rotation speed
+        rotationAxis: shouldRotate ? new THREE.Vector3(
+          Math.random() - 0.5,
+          Math.random() - 0.5, 
+          Math.random() - 0.5
+        ).normalize() : new THREE.Vector3(0, 0, 0)
+      });
+    }
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    
+    // Attach asteroid objects to geometry for collision detection
+    geometry.asteroidObjects = asteroidObjects;
+    
+    return geometry;
+  }, []);
   
   // Create cloud texture for nebula
   const cloudTexture = useMemo(() => {
@@ -360,6 +454,61 @@ function Ground({
     
     return new THREE.CanvasTexture(canvas);
   }, []);
+  
+  // Ubiquitous asteroid shader material (similar to nebula but for rocky asteroids)
+  const ubiquitousAsteroidMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        pointTexture: { value: cloudTexture },
+        fogNear: { value: 1000 },
+        fogFar: { value: 8000 }, // Longer fog distance for spread out asteroids
+        time: { value: 0 }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vFogDepth;
+        uniform float time;
+        
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          vFogDepth = -mvPosition.z;
+          
+          // Slightly smaller point size for asteroids
+          gl_PointSize = size * (400.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        uniform float fogNear;
+        uniform float fogFar;
+        uniform float time;
+        varying vec3 vColor;
+        varying float vFogDepth;
+        
+        void main() {
+          vec4 color = vec4(vColor, 1.0);
+          vec4 tex = texture2D(pointTexture, gl_PointCoord);
+          
+          // Subtle brightness variation for asteroids
+          float brightness = 0.8 + sin(time * 0.5 + gl_FragCoord.x * 0.01) * 0.1;
+          
+          float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+          
+          gl_FragColor = vec4(color.rgb * tex.rgb * brightness, tex.a * (1.0 - fogFactor) * 0.7);
+          
+          if (gl_FragColor.a < 0.01) discard;
+        }
+      `,
+      blending: THREE.NormalBlending, // Use normal blending for solid asteroids
+      depthTest: true,
+      depthWrite: false,
+      transparent: true
+    });
+  }, [cloudTexture]);
   
   // Nebula shader material
   const nebulaMaterial = useMemo(() => {
@@ -588,9 +737,9 @@ function Ground({
       baseSpeedMultiplier *= 2.0;
     }
     
-    // Move along the path
+    // Move along the path (50% slower for meteors)
     if (groupRef.current) {
-      groupRef.current.position.z += delta * 50 * baseSpeedMultiplier;
+      groupRef.current.position.z += delta * 25 * baseSpeedMultiplier; // 50% of 50 = 25
       
       // Reset position when reaching end of path
       if (groupRef.current.position.z > 8000) {
@@ -617,6 +766,17 @@ function Ground({
     // Update time uniform for background bloom twinkling
     if (backgroundBloomRef.current) {
       backgroundBloomRef.current.material.uniforms.time.value = state.clock.elapsedTime;
+      
+      // Slow nebula drift movement (50% slower) - background particles
+      const nebulaDriftSpeed = 0.5; // Base drift speed (50% of 1.0)
+      backgroundBloomRef.current.rotation.x += delta * nebulaDriftSpeed * 0.02;
+      backgroundBloomRef.current.rotation.y += delta * nebulaDriftSpeed * 0.01;
+      backgroundBloomRef.current.rotation.z += delta * nebulaDriftSpeed * 0.015;
+    }
+    
+    // Update ubiquitous asteroid rotations and material time
+    if (ubiquitousAsteroidMaterial) {
+      ubiquitousAsteroidMaterial.uniforms.time.value = state.clock.elapsedTime;
     }
     
     // Check collisions (example - integrate with your game logic)
@@ -624,6 +784,37 @@ function Ground({
     if (collisions.length > 0) {
       // Handle collisions
       console.log('Asteroid collision detected:', collisions);
+    }
+    
+    // Check meteor collisions with missiles (only if meteors are visible)
+    if (showMeteors && nebulaRef.current && nebulaRef.current.geometry.meteorObjects) {
+      const missiles = useGameStore.getState().missiles;
+      const meteorObjects = nebulaRef.current.geometry.meteorObjects;
+      
+      missiles.forEach(missile => {
+        if (!missile.isPlayerMissile) return; // Only player missiles can hit meteors
+        
+        meteorObjects.forEach(meteor => {
+          if (!meteor.alive) return;
+          
+          const missilePos = new THREE.Vector3(missile.position.x, missile.position.y, missile.position.z);
+          const distance = missilePos.distanceTo(meteor.position);
+          
+          if (distance < meteor.size + 2) { // Hit!
+            meteor.alive = false;
+            console.log('Meteor destroyed!');
+            
+            // Hide the meteor by moving it far away
+            const positions = nebulaRef.current.geometry.attributes.position.array;
+            positions[meteor.id * 3] = 999999;
+            positions[meteor.id * 3 + 1] = 999999;
+            positions[meteor.id * 3 + 2] = 999999;
+            nebulaRef.current.geometry.attributes.position.needsUpdate = true;
+            
+            // Could add score or effects here
+          }
+        });
+      });
     }
   });
   
@@ -635,6 +826,9 @@ function Ground({
         args={[asteroidField.mesh.geometry, asteroidField.mesh.material, asteroidField.asteroids.length]}
         instanceMatrix={asteroidField.mesh.instanceMatrix}
       />
+      
+      {/* Ubiquitous asteroids - stationary, spread out 30x */}
+      <points geometry={ubiquitousAsteroids} material={ubiquitousAsteroidMaterial} />
       
       {/* Nebula particles - purple/pink dots */}
       {showNebula && (

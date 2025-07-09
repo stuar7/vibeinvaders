@@ -346,6 +346,7 @@ class SOAMissilePhysicsWorker {
     
     let closestAlien = null;
     let closestDistance = Infinity;
+    let hitComponent = null;
     
     // Check 3x3x3 grid around missile
     for (let dx = -1; dx <= 1; dx++) {
@@ -370,6 +371,9 @@ class SOAMissilePhysicsWorker {
             if (distance < collisionRadius && distance < closestDistance) {
               closestDistance = distance;
               closestAlien = alien;
+              
+              // Determine hit component based on position relative to alien
+              hitComponent = this.getHitComponent(position, alien);
             }
           });
         }
@@ -381,9 +385,37 @@ class SOAMissilePhysicsWorker {
       collisions.missileAlienHits.push({
         missileId: missileId,
         alienId: closestAlien.id, // This should be the original alien ID from the store
-        distance: closestDistance
+        distance: closestDistance,
+        component: hitComponent || 'body' // Default to body if component detection fails
       });
     }
+  }
+
+  // Simple component detection based on hit position relative to alien center
+  getHitComponent(missilePosition, alien) {
+    const alienPos = alien.position;
+    const relativeX = missilePosition.x - alienPos.x;
+    const relativeY = missilePosition.y - alienPos.y;
+    const relativeZ = missilePosition.z - alienPos.z;
+    
+    // For flying saucer (type 5), map to standard components
+    const shipType = alien.type === 5 ? 'saucer' : 'ship';
+    
+    if (shipType === 'saucer') {
+      // Flying saucer component mapping
+      if (relativeY > 0.2) return 'nose'; // Top dome
+      if (relativeY < -0.2) {
+        return Math.abs(relativeX) > 0.3 ? (relativeX < 0 ? 'leftWing' : 'rightWing') : 'body';
+      }
+      return 'body'; // Main disc
+    }
+    
+    // Standard ship component detection
+    if (relativeZ < -0.8) return 'nose'; // Front cone
+    if (Math.abs(relativeX) > 0.5) {
+      return relativeX < 0 ? 'leftWing' : 'rightWing';
+    }
+    return 'body'; // Main fuselage
   }
 
   checkMissileAsteroidCollisionsSOA(missileId, position, size, asteroidGrid, collisions) {
@@ -432,18 +464,37 @@ class SOAMissilePhysicsWorker {
   checkAlienMissilePlayerCollisionSOA(missileId, position, collisions) {
     const dx = position.x - this.playerPosition.x;
     const dy = position.y - this.playerPosition.y;
-    const distanceSquared = dx * dx + dy * dy;
+    const dz = (position.z || 0) - this.playerPosition.z;
+    const distanceSquared = dx * dx + dy * dy + dz * dz;
     
     if (distanceSquared <= 64) { // 8x8 = 64
       const distance = Math.sqrt(distanceSquared);
       
       if (distance < 2.0) {
+        // Determine hit component for player ship
+        const hitComponent = this.getPlayerHitComponent(position);
+        
         collisions.alienMissilePlayerHits.push({
           missileId: missileId,
-          distance: distance
+          distance: distance,
+          component: hitComponent || 'body'
         });
       }
     }
+  }
+
+  // Component detection for player hits
+  getPlayerHitComponent(missilePosition) {
+    const relativeX = missilePosition.x - this.playerPosition.x;
+    const relativeY = missilePosition.y - this.playerPosition.y;
+    const relativeZ = (missilePosition.z || 0) - this.playerPosition.z;
+    
+    // Player ship component detection (note: player faces negative Z)
+    if (relativeZ < -0.8) return 'nose'; // Front cone
+    if (Math.abs(relativeX) > 0.5) {
+      return relativeX < 0 ? 'leftWing' : 'rightWing';
+    }
+    return 'body'; // Main fuselage
   }
 }
 

@@ -166,12 +166,12 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
               
               
               if (missile && alien) {
-                // Calculate damage based on weapon type
+                // Calculate damage based on weapon type (scaled down from old system)
                 let damage = 1;
                 switch (missile.weaponType) {
                   case 'laser': damage = 2; break;
                   case 'chaingun': damage = 1; break;
-                  case 'bfg': damage = 50; break;
+                  case 'bfg': damage = 50; break; // BFG should still one-shot most things
                   case 'rocket': damage = 5; break;
                   case 'charge': damage = missile.damage || 1; break;
                   case 'railgun': damage = 8; break;
@@ -188,29 +188,51 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
                 // Trigger hit indicator on crosshair
                 useGameStore.getState().triggerHitIndicator();
                 
-                // Use Entity Pool damage system
-                const result = damageEntity(hit.alienId, damage);
-                
-                
-                if (result === 'destroyed') {
-                  // Entity pool already removed the alien
-                  useGameStore.getState().addScore(alien.points);
-                  effectsQueueRef.current.push({
-                    id: `explosion-${Date.now()}-${alien.id}`,
-                    type: 'explosion',
-                    position: { ...alien.position },
-                    startTime: Date.now(),
-                  });
-                } else if (result === 'damaged') {
-                  // Just damaged
-                  effectsQueueRef.current.push({
-                    id: `hit-${Date.now()}-${alien.id}`,
-                    type: 'hit',
-                    position: { ...alien.position },
-                    startTime: Date.now(),
-                  });
-                } else if (result === false) {
-                  console.warn(`[COLLISION DEBUG] Failed to damage alien ${hit.alienId} - entity not found in pool`);
+                // Apply component-based damage if component info is available
+                if (hit.component) {
+                  // Use component-based damage system
+                  const damageAlienShipComponent = useGameStore.getState().damageAlienShipComponent;
+                  damageAlienShipComponent(hit.alienId, hit.component, damage);
+                  
+                  // Check if alien still exists (component damage might have destroyed it)
+                  const updatedAliens = useGameStore.getState().aliens;
+                  const alienStillExists = updatedAliens.find(a => a.id === hit.alienId);
+                  
+                  if (!alienStillExists) {
+                    // Alien was destroyed by component damage
+                    useGameStore.getState().addScore(alien.points);
+                    effectsQueueRef.current.push({
+                      id: `explosion-${Date.now()}-${alien.id}`,
+                      type: 'explosion',
+                      position: alien.position,
+                      size: alien.size || 1.5,
+                      duration: 1000
+                    });
+                  }
+                } else {
+                  // Fallback to old damage system
+                  const result = damageEntity(hit.alienId, damage);
+                  
+                  if (result === 'destroyed') {
+                    // Entity pool already removed the alien
+                    useGameStore.getState().addScore(alien.points);
+                    effectsQueueRef.current.push({
+                      id: `explosion-${Date.now()}-${alien.id}`,
+                      type: 'explosion',
+                      position: { ...alien.position },
+                      startTime: Date.now(),
+                    });
+                  } else if (result === 'damaged') {
+                    // Just damaged
+                    effectsQueueRef.current.push({
+                      id: `hit-${Date.now()}-${alien.id}`,
+                      type: 'hit',
+                      position: { ...alien.position },
+                      startTime: Date.now(),
+                    });
+                  } else if (result === false) {
+                    console.warn(`[COLLISION DEBUG] Failed to damage alien ${hit.alienId} - entity not found in pool`);
+                  }
                 }
                 
                 // Remove non-piercing missiles
@@ -318,27 +340,53 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
               
               // Apply damage logic
               if (!playerPowerUps.shield) {
-                const armorIntegrity = defensiveSystems.armor.integrity;
-                const armorLevel = defensiveSystems.armor.level;
-                
-                if (armorIntegrity > 0) {
-                  const baseDamage = 25;
-                  const armorReduction = Math.min(0.8, (armorIntegrity / 100) * (armorLevel * 0.2));
-                  const finalDamage = Math.ceil(baseDamage * (1 - armorReduction));
-                  const armorDamage = Math.min(armorIntegrity, finalDamage * 0.8);
+                // Apply component-based damage if component info is available
+                if (hit.component) {
+                  const baseDamage = 1;
+                  const damageShipComponent = useGameStore.getState().damageShipComponent;
+                  damageShipComponent(hit.component, baseDamage);
                   
-                  damageQueueRef.current.push({
-                    type: 'damageArmor',
-                    amount: armorDamage
-                  });
                   effectsQueueRef.current.push({
-                    id: `armor-hit-${Date.now()}`,
-                    type: 'armorHit',
+                    id: `component-hit-${Date.now()}`,
+                    type: 'componentHit',
                     position: { ...currentPlayerPosition, z: 0 },
+                    component: hit.component,
                     startTime: Date.now(),
                   });
+                } else {
+                  // Fallback to old armor system
+                  const armorIntegrity = defensiveSystems.armor.integrity;
+                  const armorLevel = defensiveSystems.armor.level;
                   
-                  if (armorIntegrity - armorDamage <= 0) {
+                  if (armorIntegrity > 0) {
+                    const baseDamage = 25;
+                    const armorReduction = Math.min(0.8, (armorIntegrity / 100) * (armorLevel * 0.2));
+                    const finalDamage = Math.ceil(baseDamage * (1 - armorReduction));
+                    const armorDamage = Math.min(armorIntegrity, finalDamage * 0.8);
+                    
+                    damageQueueRef.current.push({
+                      type: 'damageArmor',
+                      amount: armorDamage
+                    });
+                    effectsQueueRef.current.push({
+                      id: `armor-hit-${Date.now()}`,
+                      type: 'armorHit',
+                      position: { ...currentPlayerPosition, z: 0 },
+                      startTime: Date.now(),
+                    });
+                    
+                    if (armorIntegrity - armorDamage <= 0) {
+                      damageQueueRef.current.push({
+                        type: 'loseLife'
+                      });
+                      effectsQueueRef.current.push({
+                        id: `player-hit-${Date.now()}`,
+                        type: 'playerHit',
+                        position: { ...currentPlayerPosition, z: 0 },
+                        startTime: Date.now(),
+                      });
+                    }
+                  } else {
                     damageQueueRef.current.push({
                       type: 'loseLife'
                     });
@@ -349,16 +397,6 @@ export const useWorkerManager = ({ updateMissiles, damageArmor, damageShield, lo
                       startTime: Date.now(),
                     });
                   }
-                } else {
-                  damageQueueRef.current.push({
-                    type: 'loseLife'
-                  });
-                  effectsQueueRef.current.push({
-                    id: `player-hit-${Date.now()}`,
-                    type: 'playerHit',
-                    position: { ...currentPlayerPosition, z: 0 },
-                    startTime: Date.now(),
-                  });
                 }
               } else {
                 effectsQueueRef.current.push({

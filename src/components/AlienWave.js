@@ -4,6 +4,7 @@ import Alien from './Alien';
 import { useGameStore } from '../store/gameStore';
 import { useEntityPool } from '../hooks/useEntityPool';
 import { UnifiedGamespace } from '../config/UnifiedGamespace';
+import { EnemyShip } from '../entities/EnemyShip';
 
 function AlienWave({ level, difficultyMultiplier }) {
   const spawnRef = useRef({ 
@@ -80,7 +81,7 @@ function AlienWave({ level, difficultyMultiplier }) {
         
         // Calculate velocity direction toward target
         const deltaZ = finalPosition.z - spawnPosition.z; // -45 - (-480) = +435
-        const speed = (4 + Math.random() * 3) * 1.5 * 1.1 * 1.25 * 1.1;
+        const speed = 6 + Math.random() * 2; // Normal speed without stacked multipliers
         const direction = deltaZ > 0 ? 1 : -1; // Positive if moving toward higher Z
         
         velocity = {
@@ -100,8 +101,8 @@ function AlienWave({ level, difficultyMultiplier }) {
         };
         velocity = {
           x: 0,
-          y: -2.2 * 1.25 * 1.1, // Dive down 10% faster + 25% entrance speed + 10% movement speed
-          z: 2.2 * 1.25 * 1.1 // 10% faster + 25% entrance speed + 10% movement speed
+          y: -3, // Normal dive speed
+          z: 3 // Normal forward speed
         };
         targetPosition = finalPosition;
         break;
@@ -114,9 +115,9 @@ function AlienWave({ level, difficultyMultiplier }) {
           z: finalPosition.z - 30
         };
         velocity = {
-          x: 2.2 * 1.25 * 1.1, // Fly right 10% faster + 25% entrance speed + 10% movement speed
+          x: 3, // Normal lateral speed
           y: 0,
-          z: 1.1 * 1.25 * 1.1 // 10% faster + 25% entrance speed + 10% movement speed
+          z: 1.5 // Normal forward speed
         };
         targetPosition = finalPosition;
         break;
@@ -129,9 +130,9 @@ function AlienWave({ level, difficultyMultiplier }) {
           z: finalPosition.z - 30
         };
         velocity = {
-          x: -2.2 * 1.25 * 1.1, // Fly left 10% faster + 25% entrance speed + 10% movement speed
+          x: -3, // Normal lateral speed
           y: 0,
-          z: 1.1 * 1.25 * 1.1 // 10% faster + 25% entrance speed + 10% movement speed
+          z: 1.5 // Normal forward speed
         };
         targetPosition = finalPosition;
         break;
@@ -139,31 +140,50 @@ function AlienWave({ level, difficultyMultiplier }) {
       default:
         spawnPosition = finalPosition;
         velocity = {
-          x: (Math.random() - 0.5) * 0.5 * 1.25 * 1.1,
-          y: (Math.random() - 0.5) * 0.3 * 1.25 * 1.1,
-          z: (4 + Math.random() * 3) * 1.1 * 1.25 * 1.1 // 10% faster + 25% entrance speed + 10% movement speed
+          x: (Math.random() - 0.5) * 0.7,
+          y: (Math.random() - 0.5) * 0.4,
+          z: 5 + Math.random() * 2 // Normal forward speed
         };
         targetPosition = finalPosition;
     }
     
-    // Use Entity Pool to spawn alien with all necessary data
+    // Create enemy ship instance
+    const alienId = `alien-${alienType}-${Date.now()}-${Math.random()}`;
+    const enemyShip = new EnemyShip(alienId, alienType, spawnPosition, velocity);
+    
+    // Configure initial state
+    enemyShip.isSpawning = true;
+    enemyShip.spawnStartTime = Date.now();
+    enemyShip.isInvulnerable = gameMode !== 'freeflight';
+    
+    // Set initial mode based on spawn
+    if (alienType === 4) {
+      enemyShip.setMode('combat', { combatRange: 60, evasionDistance: 30 });
+    } else {
+      enemyShip.setMode('tasked', {
+        destination: targetPosition,
+        arrivalDistance: 10,
+        onArrival: 'combat'
+      });
+    }
+    
+    // Use Entity Pool to spawn alien with enemy ship data
     const spawnData = {
       position: spawnPosition,
       velocity: velocity,
       isAtCombatDistance: false,
       isFlying: true,
-      isSpawning: true, // New flag for spawn animation
-      isInvulnerable: gameMode !== 'freeflight', // No invulnerability in free flight mode
+      isSpawning: true,
+      isInvulnerable: enemyShip.isInvulnerable,
       spawnType: spawnType,
       targetPosition: targetPosition,
-      spawnStartTime: Date.now(),
-      // Flying saucer charge weapon properties
-      chargeLevel: alienType === 5 ? 0 : undefined,
-      maxChargeLevel: alienType === 5 ? 5 : undefined,
-      lastChargeTime: alienType === 5 ? 0 : undefined,
-      isCharging: alienType === 5 ? false : undefined,
-      // AI behavior state for Web Worker
-      behaviorState: 'patrol',
+      spawnStartTime: enemyShip.spawnStartTime,
+      enemyShip: enemyShip,
+      behaviorState: 'enemyShip',
+      // Add properties for compatibility
+      type: alienType,
+      health: enemyShip.health,
+      rotation: enemyShip.rotation
     };
     
     const newAlien = spawnAlien(alienType, spawnData);
@@ -183,111 +203,54 @@ function AlienWave({ level, difficultyMultiplier }) {
       spawnPosition = UnifiedGamespace.getSafeSpawnPosition(-450, gameMode);
     }
     
+    // Create boss enemy ship
+    const bossId = `boss-${Date.now()}`;
+    const bossVelocity = {
+      x: (Math.random() - 0.5) * 0.3,
+      y: (Math.random() - 0.5) * 0.2,
+      z: 2.5
+    };
+    const bossShip = new EnemyShip(bossId, 4, spawnPosition, bossVelocity);
+    
+    // Configure boss with enhanced weapon
+    bossShip.weapon.fireRate = 5000; // 5 seconds between BFG shots
+    bossShip.weapon.type = 'bfg';
+    bossShip.weapon.velocity = 40; // Slower BFG projectiles
+    bossShip.weapon.damage = 5;
+    bossShip.weapon.color = '#00ff00';
+    
+    // Set boss to combat mode
+    bossShip.setMode('combat', {
+      combatRange: 80,
+      evasionDistance: 40,
+      strafeAmplitude: 10,
+      strafeFrequency: 0.3
+    });
+    
     const bossData = {
       position: spawnPosition,
-      velocity: {
-        x: (Math.random() - 0.5) * 0.3, // Much reduced sideways drift to prevent boundary exit
-        y: (Math.random() - 0.5) * 0.2, // Much reduced vertical drift to prevent boundary exit
-        z: 2.2 // Slower approach than normal aliens, but 10% faster
-      },
+      velocity: bossVelocity,
       isAtCombatDistance: false,
       isFlying: true,
       isBoss: true,
-      lastBfgFire: 0, // Track BFG firing
-      bfgCooldown: 15000, // 15 seconds between BFG shots
-      behaviorState: 'boss_attack' // AI behavior state for Web Worker
+      enemyShip: bossShip,
+      behaviorState: 'enemyShip',
+      // Add properties for compatibility
+      type: 4,
+      health: bossShip.health,
+      lastBfgFire: 0,
+      bfgCooldown: 5000
     };
     
     // Spawn boss using entity pool (type 4)
     spawnAlien(4, bossData);
   };
 
-  const spawnDebugAliens = () => {
-    console.log('🐛 Spawning debug aliens for level 1!');
-    
-    // Debug Alien 1: Fly in a circle
-    const circleAlien = spawnAlien(1, {
-      position: { x: 10, y: 15, z: -30 },
-      velocity: { x: 0, y: 0, z: 0 },
-      isAtCombatDistance: false,
-      isFlying: false,
-      isDebugAlien: true,
-      debugMovementType: 'circle',
-      debugRadius: 10,
-      debugSpeed: 0.5,
-      debugAngle: 0,
-      behaviorState: 'debug',
-    });
-    
-    // Debug Alien 2: Fly in an oval
-    const ovalAlien = spawnAlien(2, {
-      position: { x: -10, y: 15, z: -30 },
-      velocity: { x: 0, y: 0, z: 0 },
-      isAtCombatDistance: false,
-      isFlying: false,
-      isDebugAlien: true,
-      debugMovementType: 'oval',
-      debugRadiusX: 15,
-      debugRadiusY: 8,
-      debugSpeed: 0.4,
-      debugAngle: 0,
-      behaviorState: 'debug',
-    });
-    
-    // Debug Alien 3: Fly up and down (z-axis strafing)
-    const verticalAlien = spawnAlien(3, {
-      position: { x: 0, y: 15, z: -40 },
-      velocity: { x: 0, y: 0, z: 0 },
-      isAtCombatDistance: false,
-      isFlying: false,
-      isDebugAlien: true,
-      debugMovementType: 'vertical',
-      debugStartZ: -40,
-      debugEndZ: -20,
-      debugSpeed: 0.3,
-      debugDirection: 1,
-      behaviorState: 'debug',
-    });
-    
-    // Debug Alien 4: Fly left and right (x-axis strafing)
-    const horizontalAlien = spawnAlien(1, {
-      position: { x: 0, y: 10, z: -35 },
-      velocity: { x: 0, y: 0, z: 0 },
-      isAtCombatDistance: false,
-      isFlying: false,
-      isDebugAlien: true,
-      debugMovementType: 'horizontal',
-      debugStartX: -15,
-      debugEndX: 15,
-      debugSpeed: 0.6,
-      debugDirection: 1,
-      behaviorState: 'debug',
-    });
-    
-    // Debug Alien 5: Stationary target (only 1)
-    const stationaryAlien = spawnAlien(5, {
-      position: { x: 0, y: 20, z: -25 },
-      velocity: { x: 0, y: 0, z: 0 },
-      isAtCombatDistance: false,
-      isFlying: false,
-      isDebugAlien: true,
-      debugMovementType: 'stationary',
-      behaviorState: 'debug',
-    });
-  };
-
-  // Spawn debug aliens once when level 1 starts
-  const debugAliensSpawnedRef = useRef(false);
+  // Debug alien spawning removed - no longer needed for production
 
   useFrame((state, delta) => {
     // Don't spawn aliens if game isn't playing
     if (gameState !== 'playing') return;
-    
-    // Spawn debug aliens once on level 1
-    if (level === 1 && !debugAliensSpawnedRef.current && gameState === 'playing') {
-      debugAliensSpawnedRef.current = true;
-      spawnDebugAliens();
-    }
     
     // Get fresh aliens list each frame
     const currentAliens = useGameStore.getState().aliens || [];
@@ -295,9 +258,10 @@ function AlienWave({ level, difficultyMultiplier }) {
     // Boss spawning timer (every 30 seconds for testing)
     spawnRef.current.bossTimer += delta;
     
-    // ALGORITHM LIMIT: Check alien count before spawning boss
+    // ALGORITHM LIMIT: Check alien count before spawning high-tier alien (was boss)
     if (spawnRef.current.bossTimer >= spawnRef.current.bossInterval && currentAliens.length < 20) {
-      spawnBoss();
+      // Spawn a high-tier alien instead of boss
+      spawnAlienWithPool(); // This will spawn a regular alien based on level
       spawnRef.current.bossTimer = 0;
     }
     
@@ -348,63 +312,22 @@ function AlienWave({ level, difficultyMultiplier }) {
       
       let updatedAlien = { ...alien };
       
-      // Handle debug alien movement patterns
-      if (alien.isDebugAlien) {
-        switch (alien.debugMovementType) {
-          case 'circle':
-            // Move in a circular pattern
-            alien.debugAngle = (alien.debugAngle || 0) + alien.debugSpeed * adjustedDelta;
-            newX = alien.debugRadius * Math.cos(alien.debugAngle) + 10; // Center at x=10
-            newY = alien.debugRadius * Math.sin(alien.debugAngle) + 15; // Center at y=15
-            newZ = -30; // Fixed Z position
-            break;
-            
-          case 'oval':
-            // Move in an oval pattern
-            alien.debugAngle = (alien.debugAngle || 0) + alien.debugSpeed * adjustedDelta;
-            newX = alien.debugRadiusX * Math.cos(alien.debugAngle) - 10; // Center at x=-10
-            newY = alien.debugRadiusY * Math.sin(alien.debugAngle) + 15; // Center at y=15
-            newZ = -30; // Fixed Z position
-            break;
-            
-          case 'vertical':
-            // Move up and down (z-axis strafing)
-            newX = 0; // Fixed X position
-            newY = 15; // Fixed Y position
-            newZ = alien.position.z + (alien.debugDirection * alien.debugSpeed * adjustedDelta);
-            
-            // Reverse direction at boundaries
-            if (newZ >= alien.debugEndZ || newZ <= alien.debugStartZ) {
-              alien.debugDirection *= -1;
-              newZ = Math.max(alien.debugStartZ, Math.min(alien.debugEndZ, newZ));
-            }
-            break;
-            
-          case 'horizontal':
-            // Move left and right (x-axis strafing)
-            newX = alien.position.x + (alien.debugDirection * alien.debugSpeed * adjustedDelta);
-            newY = 10; // Fixed Y position
-            newZ = -35; // Fixed Z position
-            
-            // Reverse direction at boundaries
-            if (newX >= alien.debugEndX || newX <= alien.debugStartX) {
-              alien.debugDirection *= -1;
-              newX = Math.max(alien.debugStartX, Math.min(alien.debugEndX, newX));
-            }
-            break;
-            
-          case 'stationary':
-            // Don't move at all
-            newX = alien.position.x;
-            newY = alien.position.y;
-            newZ = alien.position.z;
-            break;
+      // Handle enemy ship AI
+      if (alien.enemyShip) {
+        // Update enemy ship AI
+        alien.enemyShip.update(adjustedDelta, playerPosition, now);
+        
+        // Sync position and velocity
+        updatedAlien.position = { ...alien.enemyShip.position };
+        updatedAlien.velocity = { ...alien.enemyShip.velocity };
+        updatedAlien.rotation = { ...alien.enemyShip.rotation };
+        
+        // Check if enemy can fire
+        const missile = alien.enemyShip.fire(playerPosition, now);
+        if (missile) {
+          addMissile(missile);
         }
         
-        // Update alien position and skip normal behaviors
-        updatedAlien.position = { x: newX, y: newY, z: newZ };
-        updatedAlien.debugAngle = alien.debugAngle;
-        updatedAlien.debugDirection = alien.debugDirection;
         return updatedAlien;
       }
       
@@ -416,47 +339,22 @@ function AlienWave({ level, difficultyMultiplier }) {
         if (timeSinceSpawn > spawnDuration) {
           // Spawn animation complete
           updatedAlien.isSpawning = false;
-          updatedAlien.isInvulnerable = false; // Spawn animation complete, always vulnerable
+          updatedAlien.isInvulnerable = false;
           
-          // Set movement target based on game mode
-          let targetX, targetY, targetZ;
-          
-          if (gameMode === 'freeflight') {
-            // In free flight mode, aliens always head towards the player
-            targetX = playerPosition.x;
-            targetY = playerPosition.y;
-            targetZ = playerPosition.z;
-          } else {
-            // In campaign mode, use predetermined target position
-            targetX = alien.targetPosition.x;
-            targetY = alien.targetPosition.y;
-            targetZ = alien.targetPosition.z;
-          }
-          
-          const dx = targetX - newX;
-          const dy = targetY - newY;
-          const dz = targetZ - newZ;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (gameMode === 'freeflight' || distance > 5) {
-            // In free flight: always move towards player. In campaign: move to target until close
-            const speed = 4.4 * 1.25 * 1.1; // 10% faster + 25% entrance speed + 10% movement speed
+          // Update enemy ship state if available
+          if (alien.enemyShip) {
+            alien.enemyShip.isSpawning = false;
+            alien.enemyShip.isInvulnerable = false;
             
-            // In free flight mode, adjust approach to be more gradual and not too aggressive
-            const approachModifier = gameMode === 'freeflight' ? 0.8 : 1.0;
-            
-            updatedAlien.velocity = {
-              x: (dx / distance) * speed * 0.3 * approachModifier,
-              y: (dy / distance) * speed * 0.3 * approachModifier,
-              z: (dz / distance) * speed * approachModifier
-            };
-          } else {
-            // Reached target in campaign mode, use normal movement
-            updatedAlien.velocity = {
-              x: (Math.random() - 0.5) * 0.5 * 1.1,
-              y: (Math.random() - 0.5) * 0.3 * 1.1,
-              z: (4 + Math.random() * 3) * 1.1 * 1.1 // 10% faster + 10% movement speed
-            };
+            // Update enemy ship mode based on game mode
+            if (gameMode === 'freeflight') {
+              alien.enemyShip.setMode('combat', {
+                combatRange: 50,
+                evasionDistance: 20
+              });
+            } else if (alien.enemyShip.mode === 'tasked') {
+              // Let tasked mode continue to its destination
+            }
           }
         }
         
@@ -467,25 +365,17 @@ function AlienWave({ level, difficultyMultiplier }) {
       
       // Normal alien behavior (non-spawning)
       
-      // Handle out of bounds aliens - make them return to valid gamezone
-      const timeSinceSpawn = now - alien.spawnStartTime;
-      const shouldCheckBounds = timeSinceSpawn > 5000; // 5 seconds grace period
-      
-      if (!alien.isFlying && !alien.isSpawning && shouldCheckBounds) {
-        // Use mode-appropriate Z-axis bounds
+      // Handle out of bounds aliens with enemy ship AI
+      if (!alien.isSpawning && alien.enemyShip) {
         const zBounds = gameMode === 'freeflight' ? 
           { front: -10000, back: 10000 } : 
           { front: -500, back: 50 };
         const isOutOfBounds = newZ > zBounds.back || newZ < zBounds.front || !UnifiedGamespace.isWithinBounds(newX, newY, gameMode);
         
-        if (isOutOfBounds && !alien.isReturningToBounds) {
-          // Mark alien as returning to bounds and set target position
-          console.log('Alien out of bounds, redirecting to gamezone:', { x: newX, y: newY, z: newZ });
-          
-          // Get a safe position within the gamezone near combat zone
+        if (isOutOfBounds) {
+          // Use enemy ship tasked mode to return to bounds
           let safePosition;
           if (gameMode === 'freeflight') {
-            // In free flight mode, return to position near player
             safePosition = {
               x: playerPosition.x + (Math.random() - 0.5) * 50,
               y: playerPosition.y + (Math.random() - 0.5) * 50,
@@ -495,58 +385,28 @@ function AlienWave({ level, difficultyMultiplier }) {
             safePosition = UnifiedGamespace.getSafeSpawnPosition(-45, gameMode);
           }
           
-          // Calculate direction to safe position
-          const dx = safePosition.x - newX;
-          const dy = safePosition.y - newY;
-          const dz = safePosition.z - newZ;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          
-          if (distance > 0) {
-            // Set velocity to return to bounds at moderate speed
-            const returnSpeed = 8.0; // Fast enough to return quickly
-            updatedAlien.velocity = {
-              x: (dx / distance) * returnSpeed,
-              y: (dy / distance) * returnSpeed,
-              z: (dz / distance) * returnSpeed
-            };
-            updatedAlien.isReturningToBounds = true;
-            updatedAlien.returnTarget = safePosition;
-          }
-        }
-        
-        // Check if returning alien has reached safe zone
-        if (alien.isReturningToBounds) {
-          const targetDx = alien.returnTarget.x - newX;
-          const targetDy = alien.returnTarget.y - newY;
-          const targetDz = alien.returnTarget.z - newZ;
-          const targetDistance = Math.sqrt(targetDx * targetDx + targetDy * targetDy + targetDz * targetDz);
-          
-          if (targetDistance < 10 || UnifiedGamespace.isWithinBounds(newX, newY, gameMode)) {
-            // Reached safe zone, resume normal behavior
-            console.log('Alien returned to gamezone');
-            updatedAlien.isReturningToBounds = false;
-            updatedAlien.returnTarget = null;
-            // Set normal movement velocity
-            updatedAlien.velocity = {
-              x: (Math.random() - 0.5) * 0.5 * 1.1,
-              y: (Math.random() - 0.5) * 0.3 * 1.1,
-              z: (4 + Math.random() * 3) * 1.1 * 1.1
-            };
-          }
+          // Set enemy ship to return to safe position
+          alien.enemyShip.setMode('tasked', {
+            destination: safePosition,
+            arrivalDistance: 10,
+            onArrival: 'combat'
+          });
         }
       }
       
-      // Stop alien when it reaches combat distance (10% closer)
-      const combatDistance = -40.5; // 10% closer to player
-      if (newZ > combatDistance && !alien.isAtCombatDistance) {
-        console.log('Alien reached combat distance:', alien.id);
-        return {
-          ...updatedAlien,
-          position: { x: newX, y: newY, z: combatDistance },
-          velocity: { x: 0, y: 0, z: 0 }, // Stop moving
-          isAtCombatDistance: true,
-          isFlying: false // No longer flying
-        };
+      // Legacy combat distance check for non-enemy ship aliens
+      if (!alien.enemyShip) {
+        const combatDistance = -40.5;
+        if (newZ > combatDistance && !alien.isAtCombatDistance) {
+          console.log('Alien reached combat distance:', alien.id);
+          return {
+            ...updatedAlien,
+            position: { x: newX, y: newY, z: combatDistance },
+            velocity: { x: 0, y: 0, z: 0 },
+            isAtCombatDistance: true,
+            isFlying: false
+          };
+        }
       }
       
       return {
@@ -555,116 +415,40 @@ function AlienWave({ level, difficultyMultiplier }) {
       };
     }).filter(alien => alien !== null);
     
-    // Aliens shoot at player when at combat distance or approaching (25% sooner)
-    // Skip AI logic if using Web Worker AI (handled by AlienAIManager)
+    // Legacy AI firing for aliens without enemy ship AI
     const useWebWorkerAI = useGameStore.getState().useWebWorkerAI;
     
     if (!useWebWorkerAI) {
       const fireChance = 0.002 * difficultyMultiplier;
-      const earlyShootingDistance = -50.625; // 25% sooner than combat distance of -40.5
-      
-      updatedAliens.forEach((alien) => {
-      // Check if player has stealth - if so, aliens can't see them to fire
+      const earlyShootingDistance = -50.625;
       const playerHasStealth = useGameStore.getState().playerPowerUps.stealth;
       
-      // Debug aliens should never shoot
-      if (!alien.isDebugAlien && !alien.isInvulnerable && !playerHasStealth && (alien.isAtCombatDistance || alien.position.z > earlyShootingDistance)) {
-        // Boss BFG firing logic
-        if (alien.isBoss && (now - alien.lastBfgFire) >= alien.bfgCooldown) {
-          const dx = playerPosition.x - alien.position.x;
-          const dy = playerPosition.y - alien.position.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance > 0) {
-            console.log('👑 BOSS FIRES BFG!');
-            const vx = (dx / distance) * 0.3;
-            const vy = (dy / distance) * 0.3;
+      updatedAliens.forEach((alien) => {
+        // Skip aliens with enemy ship AI (they handle their own firing)
+        if (alien.enemyShip) return;
+        
+        // Legacy firing logic for old aliens
+        if (!alien.isInvulnerable && !playerHasStealth && (alien.isAtCombatDistance || alien.position.z > earlyShootingDistance)) {
+          if (Math.random() < fireChance * adjustedDelta * 60) {
+            const dx = playerPosition.x - alien.position.x;
+            const dy = playerPosition.y - alien.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
             
-            addMissile({
-              id: `boss-bfg-${Date.now()}-${alien.id}`,
-              position: { ...alien.position },
-              velocity: { x: vx, y: vy, z: 3.0 }, // Much faster BFG projectile
-              type: 'alien',
-              weaponType: 'bfg',
-              size: 8, // Large BFG projectile
-              color: '#00ff00'
-            });
-            
-            // Update last fire time
-            alien.lastBfgFire = now;
-          }
-        }
-        // Flying saucer charge weapon firing
-        else if (!alien.isBoss && alien.type === 5) {
-          // Handle charging behavior
-          const chargeDuration = 3000; // 3 seconds to charge
-          
-          if (!alien.isCharging && (now - alien.lastChargeTime) > 2000 + Math.random() * 3000) {
-            // Start charging (random delay between 2-5 seconds)
-            alien.isCharging = true;
-            alien.chargeStartTime = now;
-            alien.chargeLevel = 0;
-          }
-          
-          if (alien.isCharging) {
-            // Increase charge level over time
-            const chargeProgress = (now - alien.chargeStartTime) / chargeDuration;
-            alien.chargeLevel = Math.min(5, Math.floor(chargeProgress * 5) + 1);
-            
-            // Randomly fire at any charge level between 1-5
-            if (alien.chargeLevel >= 1 && Math.random() < 0.005 * adjustedDelta * 60) {
-              const dx = playerPosition.x - alien.position.x;
-              const dy = playerPosition.y - alien.position.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 0) {
+              const vx = (dx / distance) * 0.2;
+              const vy = (dy / distance) * 0.2;
               
-              if (distance > 0) {
-                const vx = (dx / distance) * 0.4;
-                const vy = (dy / distance) * 0.4;
-                
-                addMissile({
-                  id: `saucer-charge-${Date.now()}-${alien.id}`,
-                  position: { ...alien.position },
-                  velocity: { x: vx, y: vy, z: 2.0 }, // Faster charge projectile
-                  type: 'alien',
-                  weaponType: 'charge',
-                  chargeLevel: alien.chargeLevel,
-                  damage: alien.chargeLevel,
-                  size: 0.3 + alien.chargeLevel * 0.2,
-                  color: alien.chargeLevel === 1 ? '#ffff00' : 
-                         alien.chargeLevel === 2 ? '#ff8800' :
-                         alien.chargeLevel === 3 ? '#ff4400' :
-                         alien.chargeLevel === 4 ? '#ff0088' : '#ff00ff'
-                });
-                
-                // Reset charging
-                alien.isCharging = false;
-                alien.chargeLevel = 0;
-                alien.lastChargeTime = now;
-              }
+              addMissile({
+                id: `alien-missile-${Date.now()}-${alien.id}`,
+                position: { ...alien.position },
+                velocity: { x: vx, y: vy, z: 2.5 },
+                type: 'alien',
+              });
             }
           }
         }
-        // Regular alien firing
-        else if (!alien.isBoss && alien.type !== 5 && Math.random() < fireChance * adjustedDelta * 60) {
-          const dx = playerPosition.x - alien.position.x;
-          const dy = playerPosition.y - alien.position.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance > 0) {
-            const vx = (dx / distance) * 0.2;
-            const vy = (dy / distance) * 0.2;
-            
-            addMissile({
-              id: `alien-missile-${Date.now()}-${alien.id}`,
-              position: { ...alien.position },
-              velocity: { x: vx, y: vy, z: 2.5 }, // Increased velocity - move faster toward player
-              type: 'alien',
-            });
-          }
-        }
-      }
       });
-    } // End of traditional AI logic
+    }
     
     updateAliens(updatedAliens);
   });

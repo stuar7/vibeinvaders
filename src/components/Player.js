@@ -45,6 +45,8 @@ function Player() {
   const position = useGameStore((state) => state.playerPosition);
   const playerPowerUps = useGameStore((state) => state.playerPowerUps);
   const shieldLevel = useGameStore((state) => state.shieldLevel);
+  const playerShipComponents = useGameStore((state) => state.playerShipComponents);
+  const playerShipStatus = useGameStore((state) => state.playerShipStatus);
   const setPlayerRotation = useGameStore((state) => state.setPlayerRotation);
   const setPlayerRotationalVelocity = useGameStore((state) => state.setPlayerRotationalVelocity);
   const freeLookMode = useGameStore((state) => state.freeLookMode);
@@ -121,6 +123,24 @@ function Player() {
       // Update mesh position
       updatePlayerMeshPosition(meshRef, position);
       
+      // Apply erratic movement if wings are damaged
+      if (playerShipStatus.erraticMovement && meshRef.current) {
+        const erraticIntensity = 0.05;
+        const erraticSpeed = 8.0;
+        const time = state.clock.elapsedTime * erraticSpeed;
+        
+        // Add small random offsets to position
+        const erraticOffset = {
+          x: Math.sin(time + 1.2) * erraticIntensity,
+          y: Math.cos(time * 0.8 + 2.4) * erraticIntensity,
+          z: Math.sin(time * 1.5) * erraticIntensity * 0.5
+        };
+        
+        meshRef.current.position.x += erraticOffset.x;
+        meshRef.current.position.y += erraticOffset.y;
+        meshRef.current.position.z += erraticOffset.z;
+      }
+      
       // Handle rotation based on mode priority
       if (!doubleTapState.isRolling) {
         // Free flight mode takes priority when active
@@ -132,7 +152,8 @@ function Player() {
             virtualJoystickLocal,
             rotationDamping,
             setRotationDamping,
-            delta
+            delta,
+            turningSpeedMultiplier: playerShipStatus.turningSpeedMultiplier
           });
           
           // Handle non-pointer-locked mode
@@ -167,7 +188,8 @@ function Player() {
             keys, 
             playerVelocity, 
             playerPowerUps, 
-            elapsedTime: state.clock.elapsedTime 
+            elapsedTime: state.clock.elapsedTime,
+            turningSpeedMultiplier: playerShipStatus.turningSpeedMultiplier
           });
           
           // Update rotation in game store
@@ -201,7 +223,7 @@ function Player() {
   return (
     <group ref={meshRef} scale={PLAYER_CONFIG.playerScale} renderOrder={10}>
       {/* Hide ship model in first-person mode */}
-      {!firstPersonMode && <PlayerGeometry playerPowerUps={playerPowerUps} />}
+      {!firstPersonMode && <PlayerGeometry playerPowerUps={playerPowerUps} playerShipComponents={playerShipComponents} />}
       
       {/* Wing tip trail effects during barrel roll */}
       {doubleTapState.isRolling && <WingTrailEffect wingTrails={doubleTapState.wingTrails} />}

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 
 function GamespaceBoundary() {
   const showGamespaceBounds = useGameStore((state) => state.debug.showGamespaceBounds);
+  const gameMode = useGameStore((state) => state.gameMode);
   const playerPosition = useGameStore((state) => state.playerPosition);
   const [collisionSegments, setCollisionSegments] = useState(new Set());
   
@@ -37,7 +38,7 @@ function GamespaceBoundary() {
     useGameStore.setState({ triggerBoundaryCollision });
   }, []);
   
-  if (!showGamespaceBounds) {
+  if (!showGamespaceBounds || gameMode === 'freeflight') {
     return null;
   }
   
