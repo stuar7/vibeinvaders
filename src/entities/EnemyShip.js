@@ -378,10 +378,24 @@ export class EnemyShip {
     
     this.weapon.lastFireTime = gameTime;
     
+    // Calculate missile spawn position from the front of the ship
+    const forwardOffset = 2; // Distance in front of ship
+    const forward = {
+      x: Math.sin(this.rotation.y),
+      y: 0,
+      z: Math.cos(this.rotation.y)
+    };
+    
+    const spawnPosition = {
+      x: this.position.x + forward.x * forwardOffset,
+      y: this.position.y + forward.y * forwardOffset,
+      z: this.position.z + forward.z * forwardOffset
+    };
+    
     // Return missile data
     return {
       id: `enemy-missile-${this.id}-${gameTime}`,
-      position: { ...this.position },
+      position: spawnPosition,
       velocity: {
         x: direction.x * this.weapon.velocity,
         y: direction.y * this.weapon.velocity,

@@ -168,7 +168,7 @@ export const useWeaponSystem = ({
         }
         
         // Calculate spawn position
-        const missileSpawnOffset = new THREE.Vector3(offsetX, 0, -3);
+        const missileSpawnOffset = new THREE.Vector3(offsetX, 0, -5);
         const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
           new THREE.Euler(currentPlayerRotation.x, currentPlayerRotation.y, currentPlayerRotation.z)
         );

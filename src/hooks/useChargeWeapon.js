@@ -136,7 +136,7 @@ export const useChargeWeapon = ({
       }
       
       // Calculate spawn position for each missile individually
-      const missileSpawnOffset = new THREE.Vector3(spreadOffset, 0, -3); // 3 units forward in ship's local space
+      const missileSpawnOffset = new THREE.Vector3(spreadOffset, 0, -5); // 5 units forward in ship's local space
       const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(
         new THREE.Euler(currentPlayerRotation.x, currentPlayerRotation.y, currentPlayerRotation.z)
       );
