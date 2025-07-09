@@ -1264,7 +1264,7 @@ function AdvancedTargeting() {
               color={selectedTarget?.id === alien.id ? "#00ff00" : "#ffffff"}
               wireframe
               transparent
-              opacity={selectedTarget?.id === alien.id ? 0.4 : 0.3}
+              opacity={selectedTarget?.id === alien.id ? 0.3 : 0.225}
               linewidth={2}
             />
           </mesh>
@@ -1303,7 +1303,16 @@ function AdvancedTargeting() {
               <div>{Math.floor(distance)}m</div>
               {selectedTarget?.id === alien.id && (
                 <>
-                  <div>HP: {alien.health}/{alien.maxHealth}</div>
+                  <div>HP: {(() => {
+                    // Use unified HP from ship components if available
+                    if (alien.shipComponents) {
+                      const getUnifiedHP = useGameStore.getState().getUnifiedHP;
+                      const unifiedHP = getUnifiedHP(alien.shipComponents);
+                      return `${unifiedHP.current}/${unifiedHP.max}`;
+                    }
+                    // Fallback to old system
+                    return `${alien.health}/${alien.maxHealth}`;
+                  })()}</div>
                   <div>Type: {alien.type}</div>
                 </>
               )}

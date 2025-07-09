@@ -2,7 +2,7 @@ import React from 'react';
 
 const PerformanceMonitor = ({ performance }) => {
   return (
-    <div className="debug-section" style={{ marginTop: '15px', paddingTop: '15px', borderTop: '2px solid #ff6600' }}>
+    <div className="debug-section" style={{ marginTop: '15px', paddingTop: '15px' }}>
       <h4 style={{ color: '#ff6600', marginTop: 0, marginBottom: '10px' }}>Performance Monitor</h4>
       
       <div style={{ marginBottom: '8px' }}>

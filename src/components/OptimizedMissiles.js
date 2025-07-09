@@ -12,6 +12,11 @@ function SimpleMissileBatch({ missiles }) {
   const showCollisionCircles = useGameStore((state) => state.debug.showCollisionCircles);
   const showBlasterCollisions = useGameStore((state) => state.debug.showBlasterCollisions);
   
+  // Debug logging
+  useEffect(() => {
+    console.log(`[SIMPLE MISSILE BATCH] Rendering ${missiles.length} simple missiles`);
+  }, [missiles.length]);
+  
   // Debug logging for simple missile rendering
   useEffect(() => {
     console.log(`[SIMPLE MISSILE DEBUG] Rendering ${missiles.length} simple missiles`);
@@ -25,8 +30,8 @@ function SimpleMissileBatch({ missiles }) {
     if (missiles.length === 0) return;
     
     // Debug: Show optimization impact occasionally
-    if (missiles.length > 10 && Math.random() < 0.001) {
-      console.log(`[BATCH OPTIMIZATION] Updated ${missiles.length} simple missiles in single useFrame (was ${missiles.length} separate callbacks)`);
+    if (missiles.length > 0) {
+      console.log(`[BATCH OPTIMIZATION] Updating ${missiles.length} simple missile positions in useFrame`);
     }
     
     missiles.forEach(missile => {
@@ -34,6 +39,12 @@ function SimpleMissileBatch({ missiles }) {
       if (meshRef?.current) {
         // Batch position updates - single loop instead of N useFrame callbacks
         meshRef.current.position.set(missile.position.x, missile.position.y, missile.position.z);
+        
+        // Debug first frame position
+        if (!meshRef.current.userData.loggedFirstPosition) {
+          console.log(`[MISSILE POSITION] First frame position for ${missile.id}:`, missile.position);
+          meshRef.current.userData.loggedFirstPosition = true;
+        }
         
         if (missile.rotation) {
           meshRef.current.rotation.set(
@@ -62,6 +73,12 @@ function SimpleMissileBatch({ missiles }) {
     const { weaponType = 'default', size = 0.2, color: missileColor, type } = missile;
     const color = missileColor || (type === 'player' ? '#00ffff' : '#ff0000');
     const projectileSize = size;
+    
+    // Debug log individual missile render
+    if (!missile.position || missile.position.x === undefined || missile.position.y === undefined || missile.position.z === undefined) {
+      console.error(`[SIMPLE MISSILE BATCH] Invalid missile position:`, missile);
+      return null;
+    }
 
     // Create ref if doesn't exist
     if (!meshRefs.current.has(missile.id)) {
@@ -134,6 +151,14 @@ function OptimizedMissiles() {
   const pooledMeshesRef = useRef(new Map()); // Track pooled meshes in scene
   const sceneInitialized = useRef(false);
   const failedPoolRef = useRef(new Set()); // Track missiles that failed pool acquisition
+  
+  // Debug logging for missile count
+  useEffect(() => {
+    console.log(`[OPTIMIZED MISSILES] Total missiles in store: ${missiles.length}`);
+    missiles.forEach(missile => {
+      console.log(`[OPTIMIZED MISSILES] Missile: ${missile.id}, type: ${missile.weaponType}, pos: ${JSON.stringify(missile.position)}`);
+    });
+  }, [missiles.length]);
   
   // Debug logging for missile count
   useEffect(() => {

@@ -36,7 +36,9 @@ const LiveTargetingStatistics = ({
         position: 'relative'
       }}>
       <MinimizeButton panelId="liveTargetingStats" isMinimized={minimized} toggleMinimize={toggleMinimize} />
-      {!minimized && (
+      {minimized ? (
+        <div style={{ color: '#0088ff', fontWeight: 'bold', marginTop: '5px' }}>Live Targeting Stats</div>
+      ) : (
         <>
           <div style={{ textAlign: 'center', marginBottom: '12px', borderBottom: '1px solid #444', paddingBottom: '8px' }}>
             <h4 style={{ color: '#0088ff', margin: '0 0 5px 0', fontSize: '14px' }}>LIVE TARGETING STATS</h4>

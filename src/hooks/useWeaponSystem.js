@@ -195,6 +195,8 @@ export const useWeaponSystem = ({
           timestamp: now, // Add timestamp for tracking
         };
         
+        console.log(`[WEAPON FIRE] Creating missile at position:`, finalSpawnPosition, `weapon: ${weaponType}`);
+        
         // Add weapon-specific properties
         switch (weaponType) {
           case 'laser':

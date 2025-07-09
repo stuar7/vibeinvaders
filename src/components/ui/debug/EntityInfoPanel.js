@@ -33,7 +33,9 @@ const EntityInfoPanel = ({
       }}
     >
       <MinimizeButton panelId="entityPanel" isMinimized={minimized} toggleMinimize={toggleMinimize} />
-      {!minimized && (
+      {minimized ? (
+        <div style={{ color: '#00ff00', fontWeight: 'bold', marginTop: '5px' }}>Entity Info</div>
+      ) : (
         <>
           <EntityTracker aliens={aliens} missiles={missiles} asteroids={asteroids} />
           <EntityMonitor 

@@ -84,6 +84,7 @@ const initialState = {
     evasion: { level: 1, agility: 75, responsiveness: 'normal' },
     countermeasures: { level: 1, charges: 3, maxCharges: 5 },
     battery: { level: 1, charge: 100, maxCharge: 100, status: 'charged' },
+    cooler: { level: 1, temperature: 50, maxTemp: 100, efficiency: 'optimal' },
   },
   highScore: 0,
   debug: {
@@ -330,6 +331,30 @@ export const useGameStore = create((set, get) => ({
           z: explosionDirection.z / magnitude
         };
         
+        // Get HP for this component from ship components if available
+        const getComponentHP = () => {
+          if (alienToRemove.shipComponents) {
+            // Map component types to ship component names
+            const componentMap = {
+              'fuselage': 'body',
+              'nose': 'nose',
+              'leftWing': 'leftWing',
+              'rightWing': 'rightWing',
+              'saucerDisc': 'body',
+              'saucerDome': 'nose',
+              'saucerHull': 'leftWing', // Map to leftWing for consistency
+              'saucerEngine': 'rightWing' // Map to rightWing for consistency
+            };
+            
+            const shipComponentName = componentMap[componentType];
+            if (shipComponentName && alienToRemove.shipComponents[shipComponentName]) {
+              return alienToRemove.shipComponents[shipComponentName].hp || 1;
+            }
+          }
+          // Default HP if no ship components
+          return 1;
+        };
+        
         const debris = {
           id: `${baseId}-${index}`,
           componentType: componentType,
@@ -346,7 +371,10 @@ export const useGameStore = create((set, get) => ({
             z: (Math.random() - 0.5) * 10
           },
           lifetime: 3 + Math.random() * 2, // 3-5 seconds
-          spawnTime: Date.now()
+          spawnTime: Date.now(),
+          hp: getComponentHP(), // Add HP based on component that was destroyed
+          maxHp: getComponentHP(), // Store original HP
+          exploded: false // Track if already exploded
         };
         
         debrisComponents.push(debris);
@@ -1213,6 +1241,19 @@ export const useGameStore = create((set, get) => ({
   })),
 
   updateDebris: (debris) => set({ debris }),
+  
+  // Damage debris piece
+  damageDebris: (debrisId, damage = 1) => set((state) => {
+    const updatedDebris = state.debris.map(piece => {
+      if (piece.id === debrisId) {
+        const newHP = Math.max(0, piece.hp - damage);
+        return { ...piece, hp: newHP };
+      }
+      return piece;
+    });
+    
+    return { debris: updatedDebris };
+  }),
 
   removeDebris: (id) => set((state) => ({
     debris: state.debris.filter((debrisItem) => debrisItem.id !== id),

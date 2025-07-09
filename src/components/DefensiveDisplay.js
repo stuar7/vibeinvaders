@@ -13,6 +13,7 @@ function DefensiveDisplay() {
       case 'evasion': return '🚀';
       case 'countermeasures': return '🎯';
       case 'battery': return '🔋';
+      case 'cooler': return '❄️';
       default: return '⚙️';
     }
   };
@@ -24,6 +25,7 @@ function DefensiveDisplay() {
       case 'evasion': return 'Boost';
       case 'countermeasures': return 'Counter';
       case 'battery': return 'Battery';
+      case 'cooler': return 'Cooler';
       default: return 'Unknown';
     }
   };
@@ -40,6 +42,8 @@ function DefensiveDisplay() {
         return `${system.charges}/${system.maxCharges}`;
       case 'battery':
         return `${system.charge}%`;
+      case 'cooler':
+        return `${system.temperature}°C`;
       default: 
         return 'OK';
     }

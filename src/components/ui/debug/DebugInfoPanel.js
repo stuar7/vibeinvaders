@@ -29,7 +29,9 @@ const DebugInfoPanel = ({
       }}
     >
       <MinimizeButton panelId="debugPanel" isMinimized={minimized} toggleMinimize={toggleMinimize} />
-      {!minimized && (
+      {minimized ? (
+        <div style={{ color: '#ff6600', fontWeight: 'bold', marginTop: '5px' }}>Performance Monitor</div>
+      ) : (
         <PerformanceMonitor performance={performance} />
       )}
     </div>

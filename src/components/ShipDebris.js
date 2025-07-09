@@ -5,9 +5,34 @@ import * as THREE from 'three';
 
 function DebrisComponent({ debris }) {
   const meshRef = useRef();
+  const addEffect = useGameStore((state) => state.addEffect);
+  const updateDebris = useGameStore((state) => state.updateDebris);
   
   useFrame((state, delta) => {
     if (!meshRef.current) return;
+    
+    // Check if debris has been destroyed (HP <= 0)
+    if (debris.hp <= 0 && !debris.exploded) {
+      // Mark as exploded to prevent multiple explosions
+      debris.exploded = true;
+      
+      // Create small explosion effect
+      addEffect({
+        id: `debris-explosion-${debris.id}-${Date.now()}`,
+        type: 'explosion',
+        position: { ...debris.position },
+        scale: 0.5, // Smaller than ship explosion
+        color: '#ff6600',
+        duration: 1000,
+        particles: 10
+      });
+      
+      // Remove debris from store
+      const currentDebris = useGameStore.getState().debris || [];
+      const filteredDebris = currentDebris.filter(piece => piece.id !== debris.id);
+      updateDebris(filteredDebris);
+      return;
+    }
     
     // Update position based on velocity
     meshRef.current.position.x += debris.velocity.x * delta;
